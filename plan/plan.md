@@ -3,21 +3,25 @@
 ## 현재 방향
 
 - 모바일 앱 출시를 목표로 한다.
-- 프론트엔드 클라이언트는 Kotlin과 Swift 기반으로 계획한다.
+- 프론트엔드는 Android를 우선 작업하고, Android 클라이언트는 Kotlin 기반으로 계획한다.
+- iOS 클라이언트는 이후 Swift 기반으로 확장한다.
 - 백엔드는 Spring Boot 기반으로 계획한다.
 - 배포 대상은 AWS다.
 - 데이터베이스는 MySQL을 사용한다.
 - 배포 자동화는 Docker와 GitHub Actions 기반으로 계획한다.
-- 무중단 배포 방식을 사용한다.
+- 초기 배포는 EC2 Docker 기반으로 시작한다.
+- 무중단 배포 방식을 지향한다.
+- 로그인은 Google, Kakao Talk, 이메일 로그인을 우선 지원하고, iOS 지원 시 Apple 로그인을 추가한다.
+- 이미지 업로드는 presigned URL 기반 오브젝트 스토리지 직접 업로드 방식을 사용한다.
 
 ## 권장 초기 아키텍처
 
 ```text
-Kotlin / Swift 모바일 클라이언트
+Kotlin Android 모바일 클라이언트
   -> Spring Boot API
   -> 관계형 데이터 저장용 MySQL
-  -> 업로드 이미지 저장용 S3 호환 오브젝트 스토리지
-  -> Docker 기반 릴리스 파이프라인을 통한 AWS 배포
+  -> presigned URL 기반 업로드 이미지 저장용 S3 호환 오브젝트 스토리지
+  -> Docker 기반 릴리스 파이프라인을 통한 AWS EC2 배포
 ```
 
 ## 초기 백엔드 형태
@@ -40,14 +44,13 @@ Kotlin / Swift 모바일 클라이언트
 
 ## 미정 질문
 
-- Android와 iOS를 동시에 출시할지, 한 플랫폼을 먼저 출시할지.
-- AWS 배포를 EC2 Docker로 시작할지 ECS로 시작할지.
-- 로그인을 이메일/비밀번호, Apple, Google, 또는 조합 중 무엇으로 시작할지.
-- 이미지 업로드를 백엔드 프록시 업로드로 할지, presigned URL 기반 오브젝트 스토리지 직접 업로드로 할지.
+- EC2 Docker 기반 무중단 배포를 blue/green 방식으로 구성할지, reverse proxy 전환 방식으로 구성할지.
+- Kakao Talk 로그인 연동 범위와 초기 심사/운영 설정을 어떻게 잡을지.
+- presigned URL 업로드 완료 후 이미지 검증, 리사이징, 검수 흐름을 MVP에 어디까지 포함할지.
 
 ## 다음 계획 작업
 
 - MVP 도메인 모델과 DDL을 정의한다.
 - 인증, 엽서, 미디어, 전달, 반응, 검수에 대한 API 계약을 정의한다.
-- 초기 AWS 배포 토폴로지를 결정한다.
-- 첫 모바일 플랫폼과 UI 구현 순서를 결정한다.
+- EC2 Docker 기반 초기 AWS 배포 토폴로지를 구체화한다.
+- Android 우선 UI 구현 순서를 결정한다.
