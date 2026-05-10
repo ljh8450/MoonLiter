@@ -20,6 +20,13 @@ Before task execution, check whether the task maps to a project role under
 
 Follow the matching role file in addition to these general instructions.
 
+## Documentation Language
+
+Always write project documentation in Korean. This applies to documents under
+`/docs`, `/plan`, `.skills/`, `README.md`, `DESIGN.md`, and other project-facing
+markdown or text documentation unless the user explicitly requests another
+language.
+
 ## Git Ignore Hygiene
 
 Always keep `.gitignore` aligned with the work being done. When adding tools,
