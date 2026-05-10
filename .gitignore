@@ -1,0 +1,38 @@
+# IDE / editor
+.idea/
+*.iml
+.vscode/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+logs/
+
+# Build outputs
+build/
+out/
+target/
+
+# Gradle
+.gradle/
+
+# Kotlin / Android local files
+local.properties
+
+# Swift / Xcode local files
+DerivedData/
+*.xcuserdata/
+*.xcuserstate
+
+# Docker local overrides
+docker-compose.override.yml
