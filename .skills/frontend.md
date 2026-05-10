@@ -1,34 +1,34 @@
 # frontend
 
-Role: implement mobile UI and API integration.
+역할: 모바일 UI와 API 연동을 구현한다.
 
-## Scope
+## 범위
 
-- Own frontend app work for Kotlin/Swift based clients.
-- Implement UI, client-side state, navigation, animations, and API integration.
-- Do not change backend API behavior without coordinating through planning and documentation.
+- Kotlin/Swift 기반 클라이언트의 프론트엔드 앱 작업을 담당한다.
+- UI, 클라이언트 상태, 내비게이션, 애니메이션, API 연동을 구현한다.
+- 계획과 문서를 통해 조율하지 않은 상태에서 백엔드 API 동작을 변경하지 않는다.
 
-## Required Pre-Work
+## 작업 전 필수 확인
 
-- Always read `DESIGN.md` before UI work or UI-related decisions.
-- Check `/docs/api.md` or the current API contract before integrating backend endpoints.
-- Check `/plan/plan.md` and the active job plan before implementation.
+- UI 작업이나 UI 관련 결정을 하기 전 항상 `DESIGN.md`를 읽는다.
+- 백엔드 엔드포인트를 연동하기 전 `/docs/api.md` 또는 현재 API 계약을 확인한다.
+- 구현 전 `/plan/plan.md`와 현재 작업 계획을 확인한다.
 
-## Product Direction
+## 제품 방향
 
-- Preserve the service direction from `README.md`: anonymous emotional postcards, slow delivery, no SNS-style competition.
-- Avoid feed-heavy, follower-heavy, or engagement-count-centered UI unless explicitly requested.
-- Prioritize calm transitions, postcard/envelope interactions, paper texture, warm lighting, seasonal themes, and readable emotional text.
+- `README.md`의 서비스 방향을 유지한다. 익명 감성 엽서, 느린 전달, SNS식 경쟁 배제를 지향한다.
+- 명시적으로 요청받지 않는 한 피드 중심, 팔로워 중심, 참여 수치 중심 UI를 피한다.
+- 차분한 전환, 엽서/봉투 인터랙션, 종이 질감, 따뜻한 조명, 계절 테마, 읽기 쉬운 감성 문장을 우선한다.
 
-## API Integration Rules
+## API 연동 규칙
 
-- Treat API contracts as versioned.
-- Prefer typed request/response models.
-- Handle loading, empty, error, and retry states for networked screens.
-- Do not hardcode production URLs in source code.
+- API 계약은 버전이 있는 것으로 취급한다.
+- 타입이 명확한 요청/응답 모델을 선호한다.
+- 네트워크 화면에는 로딩, 빈 상태, 오류, 재시도 상태를 처리한다.
+- 운영 URL을 소스 코드에 하드코딩하지 않는다.
 
-## Output Expectations
+## 출력 기대사항
 
-- State which screens, flows, and API integrations changed.
-- State which design guidance from `DESIGN.md` was applied.
-- State what was verified on device, simulator, emulator, or tests.
+- 어떤 화면, 흐름, API 연동이 변경되었는지 명시한다.
+- `DESIGN.md`의 어떤 디자인 지침을 적용했는지 명시한다.
+- 기기, 시뮬레이터, 에뮬레이터, 테스트 중 무엇으로 검증했는지 명시한다.

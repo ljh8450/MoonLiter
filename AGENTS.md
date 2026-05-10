@@ -12,6 +12,7 @@ Before task execution, check whether the task maps to a project role under
 `.skills/`:
 
 - Documentation-only work: read `.skills/docs.md`.
+- Document briefing only, with no file changes: read `.skills/brief.md`.
 - Planning work: read `.skills/planner.md`.
 - Frontend UI or API integration work: read `.skills/frontend.md` and
   `DESIGN.md`.

@@ -1,22 +1,22 @@
 # docs
 
-Role: maintain project documentation only.
+역할: 프로젝트 문서만 관리한다.
 
-## Scope
+## 범위
 
-- Own `/docs`.
-- Create, update, and organize documentation.
-- Do not change application source code, build files, deployment scripts, or database schema directly.
-- If a documentation change reveals required code or schema work, record it as a note or handoff item instead of implementing it.
+- `/docs`를 담당한다.
+- 문서를 생성, 수정, 정리한다.
+- 애플리케이션 소스 코드, 빌드 파일, 배포 스크립트, 데이터베이스 스키마를 직접 변경하지 않는다.
+- 문서 작업 중 코드나 스키마 작업이 필요하다는 점을 발견하면 직접 구현하지 말고 메모나 인계 항목으로 기록한다.
 
-## Required Behavior
+## 필수 행동
 
-- Keep documentation consistent with `README.md`, `DESIGN.md`, `AGENTS.md`, and `/plan/plan.md`.
-- Prefer concise decision records over long speculative documents.
-- When documenting APIs, include request/response examples, auth requirements, error cases, and related database tables when known.
-- When documenting architecture, separate confirmed decisions from open questions.
+- 문서는 `README.md`, `DESIGN.md`, `AGENTS.md`, `/plan/plan.md`와 일관되게 유지한다.
+- 긴 추측성 문서보다 간결한 의사결정 기록을 선호한다.
+- API를 문서화할 때는 가능한 경우 요청/응답 예시, 인증 요구사항, 오류 케이스, 관련 데이터베이스 테이블을 포함한다.
+- 아키텍처를 문서화할 때는 확정된 결정사항과 미정 질문을 분리한다.
 
-## Suggested `/docs` Structure
+## 권장 `/docs` 구조
 
 ```text
 docs/
@@ -27,7 +27,7 @@ docs/
   decisions/
 ```
 
-## Output Expectations
+## 출력 기대사항
 
-- State which document was updated.
-- State whether any implementation, schema, or planning follow-up is required.
+- 어떤 문서를 수정했는지 명시한다.
+- 구현, 스키마, 계획 관련 후속 작업이 필요한지 명시한다.

@@ -1,53 +1,53 @@
-# Project Plan
+# 프로젝트 계획
 
-## Current Direction
+## 현재 방향
 
-- Mobile app release is the target.
-- Frontend clients are planned with Kotlin and Swift.
-- Backend is planned with Spring Boot.
-- Deployment target is AWS.
-- Database is MySQL.
-- Deployment automation is planned with Docker and GitHub Actions.
-- Use zero-downtime deployment practices.
+- 모바일 앱 출시를 목표로 한다.
+- 프론트엔드 클라이언트는 Kotlin과 Swift 기반으로 계획한다.
+- 백엔드는 Spring Boot 기반으로 계획한다.
+- 배포 대상은 AWS다.
+- 데이터베이스는 MySQL을 사용한다.
+- 배포 자동화는 Docker와 GitHub Actions 기반으로 계획한다.
+- 무중단 배포 방식을 사용한다.
 
-## Recommended Initial Architecture
+## 권장 초기 아키텍처
 
 ```text
-Kotlin / Swift mobile clients
+Kotlin / Swift 모바일 클라이언트
   -> Spring Boot API
-  -> MySQL for relational data
-  -> S3-compatible object storage for uploaded images
-  -> AWS deployment with Docker-based release pipeline
+  -> 관계형 데이터 저장용 MySQL
+  -> 업로드 이미지 저장용 S3 호환 오브젝트 스토리지
+  -> Docker 기반 릴리스 파이프라인을 통한 AWS 배포
 ```
 
-## Initial Backend Shape
+## 초기 백엔드 형태
 
-- Start with a modular monolith.
-- Keep clear package boundaries for auth, user, postcard, delivery, media, reaction, theme, notification, admin, and common.
-- Use versioned APIs under `/api/v1`.
-- Keep `/docs/ddl.sql` current with the latest desired MySQL schema.
+- 모듈형 모놀리식으로 시작한다.
+- `auth`, `user`, `postcard`, `delivery`, `media`, `reaction`, `theme`, `notification`, `admin`, `common`에 대해 명확한 패키지 경계를 유지한다.
+- `/api/v1` 아래에 버전이 있는 API를 둔다.
+- `/docs/ddl.sql`을 최신 목표 MySQL 스키마로 유지한다.
 
-## Initial Product Priorities
+## 초기 제품 우선순위
 
-- Anonymous emotional postcard creation.
-- Photo upload.
-- Random postcard delivery.
-- Today's postcard receipt.
-- Saved postcards.
-- Seasonal themes.
-- Emotional tags.
-- Basic moderation controls such as report, block, hide, and review status.
+- 익명 감성 엽서 작성.
+- 사진 업로드.
+- 랜덤 엽서 전달.
+- 오늘의 엽서 수신.
+- 엽서 저장.
+- 계절 테마.
+- 감성 태그.
+- 신고, 차단, 숨김, 검수 상태 같은 기본 검수/관리 기능.
 
-## Open Questions
+## 미정 질문
 
-- Whether Android and iOS launch together or one platform launches first.
-- Whether AWS deployment starts with EC2 Docker or ECS.
-- Whether login starts with email/password, Apple, Google, or a combination.
-- Whether image upload uses backend proxy upload or presigned object storage upload.
+- Android와 iOS를 동시에 출시할지, 한 플랫폼을 먼저 출시할지.
+- AWS 배포를 EC2 Docker로 시작할지 ECS로 시작할지.
+- 로그인을 이메일/비밀번호, Apple, Google, 또는 조합 중 무엇으로 시작할지.
+- 이미지 업로드를 백엔드 프록시 업로드로 할지, presigned URL 기반 오브젝트 스토리지 직접 업로드로 할지.
 
-## Next Planning Jobs
+## 다음 계획 작업
 
-- Define MVP domain model and DDL.
-- Define API contract for auth, postcard, media, delivery, reaction, and moderation.
-- Decide initial AWS deployment topology.
-- Decide first mobile platform and UI implementation sequence.
+- MVP 도메인 모델과 DDL을 정의한다.
+- 인증, 엽서, 미디어, 전달, 반응, 검수에 대한 API 계약을 정의한다.
+- 초기 AWS 배포 토폴로지를 결정한다.
+- 첫 모바일 플랫폼과 UI 구현 순서를 결정한다.

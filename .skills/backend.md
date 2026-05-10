@@ -1,43 +1,43 @@
 # backend
 
-Role: implement Spring Boot APIs and maintain database schema documentation.
+역할: Spring Boot API를 구현하고 데이터베이스 스키마 문서를 관리한다.
 
-## Scope
+## 범위
 
-- Own backend API implementation, domain logic, persistence, auth, media handling, and deployment-facing backend configuration.
-- Maintain MySQL schema requirements in `/docs/ddl.sql`.
-- Do not make frontend UI changes unless explicitly requested.
+- 백엔드 API 구현, 도메인 로직, 영속성, 인증, 미디어 처리, 배포 관련 백엔드 설정을 담당한다.
+- MySQL 스키마 요구사항을 `/docs/ddl.sql`에 유지한다.
+- 명시적으로 요청받지 않는 한 프론트엔드 UI를 변경하지 않는다.
 
-## Required Pre-Work
+## 작업 전 필수 확인
 
-- Check `/plan/plan.md` and the active job plan before implementation.
-- Check `/docs/ddl.sql` before changing persistence behavior.
-- Check existing API documentation before adding or changing endpoints.
+- 구현 전 `/plan/plan.md`와 현재 작업 계획을 확인한다.
+- 영속성 동작을 변경하기 전 `/docs/ddl.sql`을 확인한다.
+- 엔드포인트를 추가하거나 변경하기 전 기존 API 문서를 확인한다.
 
-## Backend Direction
+## 백엔드 방향
 
-- Start as a modular monolith.
-- Keep domains separated by package/module boundaries such as auth, user, postcard, delivery, media, reaction, theme, notification, admin, and common.
-- Prefer simple synchronous flows for MVP unless a queue or scheduler is clearly needed.
-- Store uploaded image files in object storage such as S3; store only keys, URLs, and metadata in MySQL.
+- 모듈형 모놀리식으로 시작한다.
+- `auth`, `user`, `postcard`, `delivery`, `media`, `reaction`, `theme`, `notification`, `admin`, `common` 같은 패키지/모듈 경계로 도메인을 분리한다.
+- 큐나 스케줄러가 명확히 필요한 경우가 아니라면 MVP에서는 단순한 동기 흐름을 선호한다.
+- 업로드된 이미지 파일은 S3 같은 오브젝트 스토리지에 저장하고, MySQL에는 key, URL, 메타데이터만 저장한다.
 
-## DDL Maintenance Rules
+## DDL 관리 규칙
 
-- Whenever an API change requires schema support, update `/docs/ddl.sql` in the same task.
-- Keep `/docs/ddl.sql` as the latest desired MySQL schema.
-- If the schema changes from a previous local version, provide the SQL statements needed to migrate an existing local database.
-- Do not silently change schema assumptions without documenting them.
+- API 변경에 스키마 지원이 필요하면 같은 작업에서 `/docs/ddl.sql`을 함께 수정한다.
+- `/docs/ddl.sql`을 최신 목표 MySQL 스키마로 유지한다.
+- 이전 로컬 버전 대비 스키마가 변경되면 기존 로컬 데이터베이스를 마이그레이션하는 데 필요한 SQL을 제시한다.
+- 스키마 가정을 문서화하지 않은 채 조용히 변경하지 않는다.
 
-## API Rules
+## API 규칙
 
-- Use versioned endpoints such as `/api/v1/...`.
-- Include authentication and authorization behavior in API documentation.
-- Include validation rules and error responses for write APIs.
-- Consider abuse prevention for anonymous interactions: report, block, hide, moderation status, and delivery limits.
+- `/api/v1/...` 같은 버전이 있는 엔드포인트를 사용한다.
+- API 문서에는 인증과 인가 동작을 포함한다.
+- 쓰기 API에는 검증 규칙과 오류 응답을 포함한다.
+- 익명 상호작용의 악용 방지를 고려한다. 예: 신고, 차단, 숨김, 검수 상태, 전달 제한.
 
-## Output Expectations
+## 출력 기대사항
 
-- State which APIs changed.
-- State whether `/docs/ddl.sql` changed.
-- If DDL changed, provide local migration SQL from the previous version.
-- State what tests or checks were run.
+- 어떤 API가 변경되었는지 명시한다.
+- `/docs/ddl.sql` 변경 여부를 명시한다.
+- DDL이 변경되었다면 이전 버전 기준 로컬 마이그레이션 SQL을 제시한다.
+- 어떤 테스트나 검사를 실행했는지 명시한다.
