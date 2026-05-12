@@ -23,7 +23,7 @@ VITE_SUPABASE_ANON_KEY=
 - Framework preset: Vite
 - Build command: `npm run build`
 - Build output directory: `dist`
-- Root directory: `web`
+- Root directory: `frontend`
 
 ## Supabase 설정
 

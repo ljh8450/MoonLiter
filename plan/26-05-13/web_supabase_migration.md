@@ -13,7 +13,7 @@
 
 ## 범위
 
-- `web/` 아래 React + Vite + TypeScript 앱을 추가한다.
+- `frontend/` 아래 React + Vite + TypeScript 앱을 추가한다.
 - Supabase Auth, Postgres, Storage를 사용하는 MVP 데이터 흐름을 구성한다.
 - Supabase SQL 마이그레이션을 추가한다.
 - PWA manifest와 service worker 기본 구성을 추가한다.
@@ -30,7 +30,7 @@
 
 ## 작업
 
-- [ ] 프론트엔드 담당: `web/` React + Vite 앱을 생성한다 - 검증: `npm run build`가 성공한다.
+- [ ] 프론트엔드 담당: `frontend/` React + Vite 앱을 생성한다 - 검증: `npm run build`가 성공한다.
 - [ ] 프론트엔드 담당: PWA 기본 파일을 추가한다 - 검증: `manifest.webmanifest`와 service worker가 빌드 산출물에 포함된다.
 - [ ] 백엔드/문서 담당: Supabase SQL 마이그레이션을 작성한다 - 검증: profiles, postcards, postcard_deliveries, storage bucket, RLS 정책이 포함된다.
 - [ ] 프론트엔드 담당: Supabase 클라이언트와 환경 변수를 연결한다 - 검증: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`가 없으면 화면에서 설정 필요 상태를 보여준다.
@@ -54,7 +54,7 @@
 
 ## 완료 기준
 
-- `web/` 앱이 로컬에서 실행되고 프로덕션 빌드가 성공한다.
+- `frontend/` 앱이 로컬에서 실행되고 프로덕션 빌드가 성공한다.
 - Supabase SQL 마이그레이션으로 MVP 데이터 구조와 RLS 정책을 구성할 수 있다.
 - 사용자가 사진 1장과 문장을 포함한 엽서를 작성할 수 있다.
 - 다른 사용자가 오늘의 엽서를 받아 사진과 문장을 볼 수 있다.
