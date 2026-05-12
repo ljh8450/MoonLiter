@@ -70,8 +70,8 @@ public class PostcardController {
     }
 
     public record CreatePostcardRequest(
-        @NotBlank
-        @Size(max = 500)
+        @NotBlank(message = "엽서 내용을 입력해주세요.")
+        @Size(max = 500, message = "엽서는 500자 이내로 적어주세요.")
         String content
     ) {
     }

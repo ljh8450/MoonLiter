@@ -1,11 +1,13 @@
 package com.moonliter.app.data
 
 import com.moonliter.app.BuildConfig
+import java.io.IOException
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONException
 import org.json.JSONObject
 
 class PostcardApiClient(
@@ -52,40 +54,57 @@ class PostcardApiClient(
         body: JSONObject? = null,
         parse: (JSONObject) -> T
     ): T = withContext(Dispatchers.IO) {
-        val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("X-User-Id", userId.toString())
-            doInput = true
-        }
-
-        if (body != null) {
-            connection.doOutput = true
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(body.toString())
+        try {
+            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("X-User-Id", userId.toString())
+                doInput = true
             }
-        }
 
-        val responseText = try {
-            val stream = if (connection.responseCode in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
+            if (body != null) {
+                connection.doOutput = true
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(body.toString())
+                }
             }
-            stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } finally {
-            connection.disconnect()
+
+            val responseCode = connection.responseCode
+            val responseText = try {
+                val stream = if (responseCode in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            } finally {
+                connection.disconnect()
+            }
+
+            val responseJson = parseJson(responseText)
+            if (!responseJson.optBoolean("success", false)) {
+                throw ApiException(responseJson.optString("message", "요청을 처리하지 못했습니다."))
+            }
+
+            parse(responseJson.optJSONObject("data") ?: throw ApiException("서버 응답 형식이 올바르지 않습니다."))
+        } catch (exception: ApiException) {
+            throw exception
+        } catch (exception: IOException) {
+            throw ApiException("서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.")
+        } catch (exception: JSONException) {
+            throw ApiException("서버 응답을 읽지 못했습니다. 잠시 후 다시 시도해주세요.")
+        }
+    }
+
+    private fun parseJson(responseText: String): JSONObject {
+        if (responseText.isBlank()) {
+            throw ApiException("서버 응답이 비어 있습니다. 잠시 후 다시 시도해주세요.")
         }
 
-        val responseJson = JSONObject(responseText)
-        if (!responseJson.optBoolean("success", false)) {
-            throw IllegalStateException(responseJson.optString("message", "요청을 처리하지 못했습니다."))
-        }
-
-        parse(responseJson.getJSONObject("data"))
+        return JSONObject(responseText)
     }
 
     private fun JSONObject.toTodayPostcard(): TodayPostcardResponse =
@@ -112,3 +131,5 @@ data class TodayPostcardResponse(
     val deliveredDate: String,
     val deliveredAt: String
 )
+
+class ApiException(message: String) : RuntimeException(message)
