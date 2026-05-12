@@ -14,7 +14,7 @@
 - 로그인은 Google, Kakao Talk, 이메일 로그인을 우선 지원하고, iOS 지원 시 Apple 로그인을 추가한다.
 - 이미지 업로드는 presigned URL 기반 오브젝트 스토리지 직접 업로드 방식을 사용한다.
 
-## 권장 초기 아키텍처
+## 목표 아키텍처
 
 ```text
 Kotlin Android 모바일 클라이언트
@@ -24,12 +24,11 @@ Kotlin Android 모바일 클라이언트
   -> Docker 기반 릴리스 파이프라인을 통한 AWS EC2 배포
 ```
 
-## 초기 백엔드 형태
+## 남은 백엔드 계획
 
-- 모듈형 모놀리식으로 시작한다.
-- `auth`, `user`, `postcard`, `delivery`, `media`, `reaction`, `theme`, `notification`, `admin`, `common`에 대해 명확한 패키지 경계를 유지한다.
-- `/api/v1` 아래에 버전이 있는 API를 둔다.
-- `/docs/ddl.sql`을 최신 목표 MySQL 스키마로 유지한다.
+- `postcard`, `delivery`, `media`, `reaction`, `theme`, `notification`, `admin` 도메인의 모델과 MySQL 스키마를 정의한다.
+- 인증, 엽서, 미디어, 전달, 반응, 검수 API 계약을 `/api/v1` 기준으로 정의한다.
+- presigned URL 업로드 완료 후 이미지 검증, 리사이징, 검수 흐름의 MVP 범위를 결정한다.
 
 ## 초기 제품 우선순위
 
@@ -50,7 +49,6 @@ Kotlin Android 모바일 클라이언트
 
 ## 다음 계획 작업
 
-- MVP 도메인 모델과 DDL을 정의한다.
 - 인증, 엽서, 미디어, 전달, 반응, 검수에 대한 API 계약을 정의한다.
 - EC2 Docker 기반 초기 AWS 배포 토폴로지를 구체화한다.
-- Android 우선 UI 구현 순서를 결정한다.
+- Android 홈/엽서 작성 초안 이후의 우선 UI 구현 순서를 결정한다.
