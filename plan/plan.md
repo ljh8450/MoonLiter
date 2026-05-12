@@ -2,34 +2,30 @@
 
 ## 현재 방향
 
-- 모바일 앱 출시를 목표로 한다.
-- 프론트엔드는 Android를 우선 작업하고, Android 클라이언트는 Kotlin 기반으로 계획한다.
-- iOS 클라이언트는 이후 Swift 기반으로 확장한다.
-- 백엔드는 Spring Boot 기반으로 계획한다.
-- 배포 대상은 AWS다.
-- 데이터베이스는 MySQL을 사용한다.
-- 배포 자동화는 Docker와 GitHub Actions 기반으로 계획한다.
-- 초기 배포는 EC2 Docker 기반으로 시작한다.
-- 무중단 배포 방식을 지향한다.
-- 로그인은 Google, Kakao Talk, 이메일 로그인을 우선 지원하고, iOS 지원 시 Apple 로그인을 추가한다.
-- 이미지 업로드는 presigned URL 기반 오브젝트 스토리지 직접 업로드 방식을 사용한다.
+- 초기 MVP는 React + Vite 기반 웹앱으로 출시한다.
+- 배포 대상은 Cloudflare Pages다.
+- 데이터, 인증, 이미지 저장은 Supabase를 우선 사용한다.
+- 웹앱은 PWA로 설치 가능한 형태를 목표로 한다.
+- Android, iOS, Spring Boot, AWS EC2 배포는 초기 MVP 이후 확장 후보로 보류한다.
+- 익명 또는 최소 인증 기반으로 엽서 작성, 사진 업로드, 랜덤 전달, 오늘의 엽서 수신 흐름을 먼저 검증한다.
 
 ## 목표 아키텍처
 
 ```text
-Kotlin Android 모바일 클라이언트
-  -> Spring Boot API
-  -> 관계형 데이터 저장용 MySQL
-  -> presigned URL 기반 업로드 이미지 저장용 S3 호환 오브젝트 스토리지
-  -> Docker 기반 릴리스 파이프라인을 통한 AWS EC2 배포
+React + Vite + PWA 웹앱
+  -> Supabase Auth
+  -> Supabase Postgres
+  -> Supabase Storage
+  -> Cloudflare Pages 배포
 ```
 
-## 남은 백엔드 계획
+## 남은 플랫폼 계획
 
-- `postcard`, `delivery`의 첫 MVP 코드는 작성되었고, 목표 MySQL 스키마와 API 문서 반영이 남아 있다.
-- `media`, `reaction`, `theme`, `notification`, `admin` 도메인의 모델과 MySQL 스키마를 정의한다.
-- 인증, 미디어, 반응, 검수 API 계약을 `/api/v1` 기준으로 정의한다.
-- presigned URL 업로드 완료 후 이미지 검증, 리사이징, 검수 흐름의 MVP 범위를 결정한다.
+- Supabase Auth 익명 로그인 또는 최소 로그인 방식을 결정한다.
+- Supabase Postgres 스키마와 RLS 정책을 MVP 흐름에 맞게 정리한다.
+- Supabase Storage 버킷과 업로드/조회 정책을 정리한다.
+- Cloudflare Pages 빌드/환경 변수 설정을 정리한다.
+- 기존 Android/Spring Boot 구현은 참고 구현으로 유지하되 초기 MVP 경로에서는 제외한다.
 
 ## 초기 제품 우선순위
 
@@ -44,22 +40,22 @@ Kotlin Android 모바일 클라이언트
 
 ## 미정 질문
 
-- EC2 Docker 기반 무중단 배포를 blue/green 방식으로 구성할지, reverse proxy 전환 방식으로 구성할지.
-- Kakao Talk 로그인 연동 범위와 초기 심사/운영 설정을 어떻게 잡을지.
-- presigned URL 업로드 완료 후 이미지 검증, 리사이징, 검수 흐름을 MVP에 어디까지 포함할지.
+- Supabase Auth는 익명 로그인을 사용할지, 이메일 매직 링크를 사용할지.
+- Supabase Storage 버킷을 private으로 두고 signed URL로 조회할지, 제한된 public bucket으로 시작할지.
+- Cloudflare Pages 배포 환경에서 Supabase URL과 anon key를 어떤 환경 이름으로 관리할지.
+- 기존 Android/Spring Boot 코드를 언제 정리하거나 별도 브랜치로 분리할지.
 
 ## 직후 구현 단위
 
-- 엽서 작성 흐름에 단일 사진 업로드를 붙인다.
-- 범위는 presigned URL 발급, 단일 이미지 업로드 완료 등록, 업로드된 이미지와 엽서 연결, Android 사진 선택 및 업로드 흐름이다.
-- 제외 범위는 다중 이미지, 이미지 리사이징, 자동 검수, CDN, 필터, 저장/반응/신고/차단, 운영 인증 전환, 배포 자동화다.
-- 완료 기준은 Android에서 사진 1장과 문장을 함께 담은 엽서를 작성하고, 오늘의 엽서 조회 응답에서 이미지 접근 정보까지 확인되는 것이다.
-- 세부 계획은 `plan/26-05-13/postcard_photo_upload.md`에서 관리한다.
+- React + Vite 웹앱과 Supabase 기반 초기 MVP로 마이그레이션한다.
+- 범위는 Vite 웹앱 스캐폴드, PWA 기본 파일, Supabase 클라이언트 연결, Supabase SQL 마이그레이션, Cloudflare Pages 배포 설정이다.
+- 제외 범위는 운영 도메인 연결, 고급 인증, 관리자 검수, 푸시 알림, Android/iOS 앱 유지보수다.
+- 완료 기준은 웹앱이 빌드되고, Supabase 마이그레이션 SQL로 엽서 작성/사진 저장/오늘의 엽서 수신 데이터 흐름을 구성할 수 있는 것이다.
+- 세부 계획은 `plan/26-05-13/web_supabase_migration.md`에서 관리한다.
 
 ## 다음 계획 작업
 
-- 엽서 사진 업로드 MVP의 DDL, API 계약, Android 구현 순서를 확정한다.
-- 사진 업로드 MVP 완료 후 인증 고도화, 저장/반응, 검수 API 순서로 확장한다.
-- 인증, 미디어, 반응, 검수에 대한 API 계약을 정의한다.
-- EC2 Docker 기반 초기 AWS 배포 토폴로지를 구체화한다.
-- Android 첫 MVP 화면 이후 사진 업로드와 수신 화면 개선 순서를 결정한다.
+- Supabase 프로젝트에 SQL 마이그레이션을 적용한다.
+- Cloudflare Pages 프로젝트에 `web` 앱을 연결하고 환경 변수를 등록한다.
+- 웹앱에서 사진 포함 엽서 작성, 오늘의 엽서 받기, 다시 보기 흐름을 검증한다.
+- 첫 웹 MVP 완료 후 저장/반응, 검수, 인증 고도화 순서로 확장한다.
