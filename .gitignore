@@ -22,9 +22,16 @@ logs/
 build/
 out/
 target/
+dist/
 
 # Gradle
 .gradle/
+
+# Node / web local files
+node_modules/
+.vite/
+.wrangler/
+*.tsbuildinfo
 
 # Kotlin / Android local files
 local.properties
