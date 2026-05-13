@@ -10,6 +10,7 @@
 - 현재 저장소에는 Android 앱과 Spring Boot API가 있으나, 초기 배포 목표가 웹앱으로 변경되었다.
 - 기존 관계형 도메인 구조를 살리기 위해 Firebase보다 Supabase를 우선 선택한다.
 - Cloudflare Pages는 Vite 정적 빌드와 잘 맞고, PWA는 웹 MVP의 설치 경험을 제공한다.
+- MVP 인증은 익명 로그인으로 시작하되, 이후 이메일 매직 링크나 소셜 로그인을 현재 익명 계정에 연결할 수 있도록 확장한다.
 
 ## 범위
 
@@ -18,6 +19,7 @@
 - Supabase SQL 마이그레이션을 추가한다.
 - PWA manifest와 service worker 기본 구성을 추가한다.
 - Cloudflare Pages 배포에 필요한 빌드 명령과 환경 변수 기준을 정리한다.
+- 향후 이메일/소셜 로그인 연결을 고려해 사용자 데이터는 Supabase Auth 사용자 ID 기준으로 유지한다.
 
 ## 제외 범위
 
@@ -27,6 +29,7 @@
 - Cloudflare Functions 또는 Supabase Edge Functions 고도화.
 - 관리자 검수, 신고/차단, 반응, 저장 기능.
 - 푸시 알림과 백그라운드 동기화.
+- MVP 단계의 이메일 로그인, 소셜 로그인, 계정 연결 UI.
 
 ## 작업
 
@@ -39,6 +42,11 @@
 - [ ] 문서 담당: Cloudflare Pages 배포 설정을 문서화한다 - 검증: 빌드 명령, 출력 디렉터리, 환경 변수 이름이 명시된다.
 - [ ] reviewer 담당: 계획 대비 구현과 배포 리스크를 리뷰한다 - 검증: Supabase RLS, Storage 정책, Cloudflare 환경 변수, PWA 동작 리스크가 정리된다.
 
+## 후속 확장
+
+- [ ] 프론트엔드/백엔드 담당: 익명 계정을 이메일 매직 링크 또는 소셜 로그인 계정에 연결하는 흐름을 설계한다 - 검증: 기존 `auth.users.id` 기준의 엽서, 배송 기록, 이미지 경로가 계정 연결 후에도 유지된다.
+- [ ] 백엔드/문서 담당: 계정 연결에 필요한 `profiles` 확장 필드를 검토한다 - 검증: 표시 이름, 아바타, 익명 여부, 연결 시각이 필요한지 결정한다.
+
 ## 의존성
 
 - Supabase 프로젝트가 필요하다.
@@ -48,7 +56,6 @@
 
 ## 미정 질문
 
-- Supabase Auth는 익명 로그인으로 시작할지 이메일 매직 링크로 시작할지.
 - Storage bucket은 private + signed URL로 둘지, MVP 속도를 위해 제한된 public bucket으로 둘지.
 - 기존 Android/Spring Boot 구현은 보관할지 별도 디렉터리나 브랜치로 분리할지.
 
