@@ -26,7 +26,7 @@ React + Vite + PWA 웹앱
 - Supabase Storage 버킷과 업로드/조회 정책을 정리한다.
 - Cloudflare Pages 빌드/환경 변수 설정을 정리한다.
 - 기존 Android/Spring Boot 구현은 참고 구현으로 유지하되 초기 MVP 경로에서는 제외한다.
-- Android/Spring Boot 사진 업로드 경로를 재개할 경우 세부 결정사항은 `plan/26-05-13/postcard_photo_upload.md`를 기준으로 한다.
+- Android/Spring Boot 사진 업로드 경로는 향후 구현 후보로 보류한다.
 
 ## 초기 제품 우선순위
 
@@ -52,7 +52,7 @@ React + Vite + PWA 웹앱
 - 범위는 Vite 웹앱 스캐폴드, PWA 기본 파일, Supabase 클라이언트 연결, Supabase SQL 마이그레이션, Cloudflare Pages 배포 설정이다.
 - 제외 범위는 운영 도메인 연결, 고급 인증, 관리자 검수, 푸시 알림, Android/iOS 앱 유지보수다.
 - 완료 기준은 웹앱이 빌드되고, Supabase 마이그레이션 SQL로 엽서 작성/사진 저장/오늘의 엽서 수신 데이터 흐름을 구성할 수 있는 것이다.
-- 세부 계획은 `plan/26-05-13/web_supabase_migration.md`에서 관리한다.
+- 세부 계획은 `plan/26-05-15/web_supabase_mvp.md`에서 관리한다.
 
 ## 다음 계획 작업
 

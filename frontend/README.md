@@ -31,3 +31,13 @@ VITE_SUPABASE_ANON_KEY=
 2. Auth에서 익명 로그인을 활성화한다.
 3. `supabase/migrations/202605130001_initial_web_mvp.sql`을 적용한다.
 4. 웹앱 환경 변수에 Supabase URL과 anon key를 등록한다.
+
+## 현재 범위
+
+- 익명 로그인.
+- 사진 1장과 문장을 포함한 엽서 작성.
+- Supabase Storage private bucket 업로드.
+- 오늘의 엽서 랜덤 배정.
+- 수신한 사진은 Storage path로 signed URL을 생성해 표시한다.
+
+Android/Spring Boot 기반 구현은 향후 구현 경로로 보류한다.
