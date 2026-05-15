@@ -26,6 +26,7 @@ React + Vite + PWA 웹앱
 - Supabase Storage 버킷과 업로드/조회 정책을 정리한다.
 - Cloudflare Pages 빌드/환경 변수 설정을 정리한다.
 - 기존 Android/Spring Boot 구현은 참고 구현으로 유지하되 초기 MVP 경로에서는 제외한다.
+- Android/Spring Boot 사진 업로드 경로를 재개할 경우 세부 결정사항은 `plan/26-05-13/postcard_photo_upload.md`를 기준으로 한다.
 
 ## 초기 제품 우선순위
 
