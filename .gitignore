@@ -33,6 +33,9 @@ node_modules/
 .wrangler/
 *.tsbuildinfo
 
+# Supabase local state
+supabase/.branches/
+
 # Kotlin / Android local files
 local.properties
 

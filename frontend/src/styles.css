@@ -121,6 +121,13 @@ textarea {
   background: rgba(255, 255, 255, 0.64);
 }
 
+.field-note {
+  margin: -8px 0 16px;
+  color: rgba(139, 111, 90, 0.86);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 textarea {
   min-height: 140px;
   resize: vertical;
