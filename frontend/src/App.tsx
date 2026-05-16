@@ -482,17 +482,15 @@ export function App() {
     setState({ type: 'success', message: '신고를 접수했습니다.' })
   }
 
-  async function moderatePostcard(postcardId: string, action: 'approve' | 'reject' | 'hide') {
+  async function moderatePostcard(postcardId: string, action: 'approve' | 'reject') {
     if (!supabase) return
 
     setState({ type: 'loading', message: '관리자 처리를 저장하는 중입니다.' })
-    const rpcName = action === 'approve' ? 'approve_postcard' : action === 'reject' ? 'reject_postcard' : 'hide_postcard'
+    const rpcName = action === 'approve' ? 'approve_postcard' : 'reject_postcard'
     const params =
       action === 'approve'
         ? { target_postcard_id: postcardId }
-        : action === 'reject'
-          ? { target_postcard_id: postcardId, rejection_note: null }
-          : { target_postcard_id: postcardId, hide_note: null }
+        : { target_postcard_id: postcardId, rejection_note: null }
 
     const { error } = await supabase.rpc(rpcName, params)
     if (error) {
@@ -776,9 +774,6 @@ export function App() {
                         <button onClick={() => moderatePostcard(postcard.id, 'approve')}>승인</button>
                         <button className="secondary-button" onClick={() => moderatePostcard(postcard.id, 'reject')}>
                           반려
-                        </button>
-                        <button className="secondary-button" onClick={() => moderatePostcard(postcard.id, 'hide')}>
-                          숨김
                         </button>
                       </div>
                     </article>
