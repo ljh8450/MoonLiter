@@ -91,6 +91,7 @@ export function App() {
   const [userActions, setUserActions] = useState<UserAction[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [pendingPostcards, setPendingPostcards] = useState<AdminPostcard[]>([])
+  const [adminImageUrls, setAdminImageUrls] = useState<Record<string, string>>({})
   const [reports, setReports] = useState<AdminReport[]>([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -135,6 +136,7 @@ export function App() {
       setUserActions([])
       setIsAdmin(false)
       setPendingPostcards([])
+      setAdminImageUrls({})
       setReports([])
       return
     }
@@ -403,8 +405,30 @@ export function App() {
     if (pendingResult.error) throw pendingResult.error
     if (reportsResult.error) throw reportsResult.error
 
-    setPendingPostcards((pendingResult.data ?? []) as AdminPostcard[])
+    const pending = (pendingResult.data ?? []) as AdminPostcard[]
+    setPendingPostcards(pending)
+    setAdminImageUrls(await loadImageUrlsByPostcardId(pending))
     setReports((reportsResult.data ?? []) as unknown as AdminReport[])
+  }
+
+  async function loadImageUrlsByPostcardId(postcards: Array<{ id: string; image_path: string | null }>) {
+    if (!supabase) return {}
+    const client = supabase
+
+    const entries = await Promise.all(
+      postcards
+        .filter((postcard) => postcard.image_path)
+        .map(async (postcard) => {
+          const { data, error } = await client.storage
+            .from('postcard-images')
+            .createSignedUrl(postcard.image_path!, signedUrlExpiresInSeconds)
+
+          if (error || !data?.signedUrl) return null
+          return [postcard.id, data.signedUrl] as const
+        }),
+    )
+
+    return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null))
   }
 
   async function createUserAction(delivery: TodayPostcard | ReceivedDelivery, actionType: 'not_interested' | 'hidden') {
@@ -518,7 +542,17 @@ export function App() {
         <p className="eyebrow">문라이터</p>
         <h1>오늘의 마음을 누군가에게.</h1>
         <p>사진 한 장과 짧은 문장을 조용히 우체통에 넣어보세요.</p>
-        {!user && <button onClick={signInAnonymously}>익명으로 시작</button>}
+        {!user && (
+          <div className="hero-actions">
+            <button onClick={() => signInWithProvider('google')}>구글로 시작</button>
+            <button className="secondary-dark-button" onClick={() => signInWithProvider('kakao')}>
+              카카오로 시작
+            </button>
+            <button className="text-button" onClick={signInAnonymously}>
+              익명으로 둘러보기
+            </button>
+          </div>
+        )}
       </section>
 
       {user && (
@@ -679,7 +713,11 @@ export function App() {
             <section className="workspace">
               <section className="panel">
                 <h2>로그인</h2>
-                <p className="field-note">이메일 매직 링크, 이메일/비밀번호, 구글, 카카오 로그인을 순서대로 사용할 수 있습니다.</p>
+                <div className="button-grid priority-grid">
+                  <button onClick={() => signInWithProvider('google')}>구글로 계속</button>
+                  <button onClick={() => signInWithProvider('kakao')}>카카오로 계속</button>
+                </div>
+                <div className="divider" />
                 <label>
                   이메일
                   <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
@@ -703,11 +741,8 @@ export function App() {
                   <button onClick={signUpWithPassword} disabled={!email.trim() || password.length < 6}>
                     가입
                   </button>
-                  <button className="secondary-button" onClick={() => signInWithProvider('google')}>
-                    구글
-                  </button>
-                  <button className="secondary-button" onClick={() => signInWithProvider('kakao')}>
-                    카카오
+                  <button className="secondary-button" onClick={signInAnonymously}>
+                    익명
                   </button>
                 </div>
               </section>
@@ -733,6 +768,9 @@ export function App() {
                   {pendingPostcards.length === 0 && <p>대기 중인 엽서가 없습니다.</p>}
                   {pendingPostcards.map((postcard) => (
                     <article className="postcard-row" key={postcard.id}>
+                      {adminImageUrls[postcard.id] && (
+                        <img className="admin-image" src={adminImageUrls[postcard.id]} alt="승인 대기 엽서 사진" />
+                      )}
                       <p>{postcard.content}</p>
                       <div className="row-actions">
                         <button onClick={() => moderatePostcard(postcard.id, 'approve')}>승인</button>
