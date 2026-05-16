@@ -149,6 +149,16 @@ textarea {
   border-radius: 8px;
 }
 
+.image-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.secondary-button {
+  color: #1e2a38;
+  background: rgba(122, 158, 187, 0.28);
+}
+
 .postcard-text {
   margin: 18px 0;
   font-size: 20px;

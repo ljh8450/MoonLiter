@@ -122,7 +122,7 @@ export function App() {
     }
 
     const extension = getImageExtension(imageFile.type)
-    const path = `${user.id}/${crypto.randomUUID()}.${extension}`
+    const path = `postcards/${user.id}/${crypto.randomUUID()}.${extension}`
     const { error } = await supabase.storage.from('postcard-images').upload(path, imageFile, {
       contentType: imageFile.type,
       upsert: false,
@@ -167,7 +167,7 @@ export function App() {
 
       setContent('')
       setImageFile(null)
-      setState({ type: 'success', message: '엽서를 우체통에 넣었습니다.' })
+      setState({ type: 'success', message: '엽서를 우체통에 넣었습니다. 승인 후 누군가에게 도착합니다.' })
     } catch (error) {
       setState({
         type: 'error',
@@ -250,7 +250,14 @@ export function App() {
               />
             </label>
             <p className="field-note">JPEG, PNG, WebP 사진 1장만 보낼 수 있습니다. 최대 10MB.</p>
-            {imagePreviewUrl && <img className="preview" src={imagePreviewUrl} alt="선택한 사진 미리보기" />}
+            {imagePreviewUrl && (
+              <div className="image-preview">
+                <img className="preview" src={imagePreviewUrl} alt="선택한 사진 미리보기" />
+                <button className="secondary-button" type="button" onClick={() => handleImageChange(null)}>
+                  사진 선택 취소
+                </button>
+              </div>
+            )}
             <label>
               문장
               <textarea
