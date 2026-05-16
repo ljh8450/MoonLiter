@@ -86,11 +86,38 @@ h2 {
   max-width: 1040px;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 1040px;
+  margin: 0 0 18px;
+}
+
+.tab {
+  min-width: 76px;
+  color: rgba(245, 241, 232, 0.86);
+  background: rgba(245, 241, 232, 0.12);
+  border: 1px solid rgba(245, 241, 232, 0.18);
+}
+
+.tab.active {
+  color: #1e2a38;
+  background: #f5b971;
+}
+
 .panel {
   border-radius: 8px;
   padding: 22px;
   color: #1e2a38;
   background: #f5f1e8;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .night-panel {
@@ -159,10 +186,78 @@ textarea {
   background: rgba(122, 158, 187, 0.28);
 }
 
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .postcard-text {
   margin: 18px 0;
   font-size: 20px;
   line-height: 1.7;
+}
+
+.quiet-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.postcard-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(139, 111, 90, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.postcard-row p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.postcard-row time,
+.mono {
+  color: rgba(139, 111, 90, 0.9);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge {
+  width: fit-content;
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: #1e2a38;
+  background: rgba(122, 158, 187, 0.28);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge.approved {
+  background: rgba(122, 158, 187, 0.44);
+}
+
+.badge.pending,
+.badge.open {
+  background: rgba(245, 185, 113, 0.52);
+}
+
+.badge.rejected,
+.badge.hidden {
+  background: rgba(139, 111, 90, 0.24);
 }
 
 .status {
@@ -184,6 +279,10 @@ textarea {
   }
 
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .button-grid {
     grid-template-columns: 1fr;
   }
 }
