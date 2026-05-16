@@ -14,7 +14,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - `postcards`에는 `image_path`, `image_content_type`, `image_byte_size`, `status`가 반영되어 있다.
 - 새 엽서는 `pending`으로 생성되고, `assign_today_postcard()`는 `approved` 엽서만 배정한다.
 - 오늘의 엽서 화면은 RPC 응답의 `image_path`로 1시간짜리 signed URL을 생성해 이미지를 표시한다.
-- 관리자 승인 UI는 아직 없으므로 실제 수신 테스트에는 SQL 또는 Supabase Studio를 통한 `approved` 상태 변경이 필요하다.
+- 관리자 승인 UI가 구현되어 있어 실제 수신 테스트 전 `/admin` 화면에서 `approved` 상태로 변경할 수 있다.
 
 ## 맥락
 
@@ -75,7 +75,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 업로드 가능한 최대 byte size는 MVP에서 10MB로 제한한다.
 - 허용 이미지 content type은 `image/jpeg`, `image/png`, `image/webp`로 제한한다.
 - Storage path는 `postcards/{auth.uid()}/{uuid}.{ext}` 형식으로 만들어 충돌과 추적 정리를 피할 수 있게 한다.
-- MVP 인증은 Supabase 익명 로그인을 우선 사용한다.
+- MVP 인증은 Supabase 소셜/이메일 로그인을 사용하며, 익명 작성 기능은 제공하지 않는다.
 - 작성/수신 기록과 signed URL 권한 확인을 위해 최소 수신 기록 테이블을 MVP에 포함한다.
 - 사용자는 `author_id = auth.uid()`인 엽서만 직접 생성할 수 있다.
 - 클라이언트는 엽서를 직접 `approved` 상태로 생성하거나 변경할 수 없다.
@@ -124,7 +124,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 - signed URL 만료 시간은 현재 1시간으로 구현되어 있다.
 - 이미지 없는 오늘의 엽서는 `image_path`, `image_content_type`, `image_byte_size`를 `null`로 반환한다.
-- 이메일 매직 링크 또는 자체 이메일 로그인은 `plan/26-05-16/auth_history_reports_admin.md`에서 후속 구현한다.
+- 이메일 매직 링크와 자체 이메일 로그인은 `plan/26-05-16/auth_history_reports_admin.md` 범위에서 구현되어 있다.
 
 ## 추가 구현 고민사항
 

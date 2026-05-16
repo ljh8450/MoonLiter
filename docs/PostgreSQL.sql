@@ -6,11 +6,22 @@
 -- - supabase/migrations/202605160002_postcard_approval_and_path_policy.sql
 -- - supabase/migrations/202605170001_admin_reports_actions.sql
 -- - supabase/migrations/202605170002_report_insert_policy.sql
+-- - supabase/migrations/202605170003_admin_user_management.sql
+-- - supabase/migrations/202605170004_fix_invite_admin_user.sql
+-- - supabase/migrations/202605170005_fix_invite_admin_user_upsert.sql
+-- - supabase/migrations/202605170006_fix_invite_admin_user_conflict.sql
+-- - supabase/migrations/202605170007_user_suspensions_and_login_required.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    suspended_at TIMESTAMPTZ,
+    suspended_by UUID,
+    suspension_reason TEXT CHECK (
+        suspension_reason IS NULL
+        OR char_length(trim(suspension_reason)) BETWEEN 1 AND 500
+    ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -129,6 +140,192 @@ AS $$
        );
 $$;
 
+CREATE OR REPLACE FUNCTION public.is_suspended(target_user_id UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT target_user_id IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+             FROM public.profiles p
+            WHERE p.id = target_user_id
+              AND p.suspended_at IS NOT NULL
+       );
+$$;
+
+CREATE OR REPLACE FUNCTION public.list_admin_users()
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        a.user_id,
+        u.email::TEXT,
+        a.created_at
+      FROM public.admin_users a
+      JOIN auth.users u
+        ON u.id = a.user_id
+     ORDER BY a.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.invite_admin_user(target_email TEXT)
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    target_user auth.users%ROWTYPE;
+    inserted_admin public.admin_users%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    SELECT *
+      INTO target_user
+      FROM auth.users u
+     WHERE lower(u.email) = lower(trim(target_email))
+     LIMIT 1;
+
+    IF target_user.id IS NULL THEN
+        RAISE EXCEPTION '해당 이메일의 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    INSERT INTO public.profiles (id)
+    VALUES (target_user.id)
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.admin_users (user_id)
+    VALUES (target_user.id)
+    ON CONFLICT ON CONSTRAINT admin_users_pkey DO NOTHING;
+
+    SELECT *
+      INTO inserted_admin
+      FROM public.admin_users a
+     WHERE a.user_id = target_user.id;
+
+    RETURN QUERY
+    SELECT
+        inserted_admin.user_id,
+        target_user.email::TEXT,
+        inserted_admin.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.remove_admin_user(target_user_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    admin_count INTEGER;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    IF target_user_id = auth.uid() THEN
+        RAISE EXCEPTION '자기 자신의 관리자 권한은 회수할 수 없습니다.';
+    END IF;
+
+    SELECT count(*)
+      INTO admin_count
+      FROM public.admin_users;
+
+    IF admin_count <= 1 THEN
+        RAISE EXCEPTION '마지막 관리자 권한은 회수할 수 없습니다.';
+    END IF;
+
+    DELETE FROM public.admin_users
+     WHERE user_id = target_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.suspend_user(
+    target_user_id UUID,
+    reason TEXT DEFAULT NULL
+)
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_profile public.profiles%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    IF target_user_id = current_user_id THEN
+        RAISE EXCEPTION '자기 자신은 정지할 수 없습니다.';
+    END IF;
+
+    UPDATE public.profiles
+       SET suspended_at = NOW(),
+           suspended_by = current_user_id,
+           suspension_reason = NULLIF(trim(reason), '')
+     WHERE id = target_user_id
+     RETURNING * INTO updated_profile;
+
+    IF updated_profile.id IS NULL THEN
+        RAISE EXCEPTION '정지할 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_profile;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.unsuspend_user(target_user_id UUID)
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    updated_profile public.profiles%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    UPDATE public.profiles
+       SET suspended_at = NULL,
+           suspended_by = NULL,
+           suspension_reason = NULL
+     WHERE id = target_user_id
+     RETURNING * INTO updated_profile;
+
+    IF updated_profile.id IS NULL THEN
+        RAISE EXCEPTION '정지 해제할 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_profile;
+END;
+$$;
+
 CREATE POLICY "profiles can insert own row"
     ON public.profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
@@ -146,6 +343,7 @@ CREATE POLICY "users can create own postcards"
     WITH CHECK (
         auth.uid() = author_id
         AND status = 'pending'
+        AND NOT public.is_suspended()
     );
 
 CREATE POLICY "users can read own postcards"
@@ -181,6 +379,7 @@ CREATE POLICY "users can create own postcard actions"
     ON public.postcard_user_actions FOR INSERT
     WITH CHECK (
         auth.uid() = user_id
+        AND NOT public.is_suspended()
         AND EXISTS (
             SELECT 1
               FROM public.postcard_deliveries d
@@ -206,6 +405,7 @@ CREATE POLICY "users can create own reports"
     ON public.postcard_reports FOR INSERT
     WITH CHECK (
         auth.uid() = reporter_id
+        AND NOT public.is_suspended()
         AND status = 'open'
         AND handled_by IS NULL
         AND handled_at IS NULL
@@ -243,6 +443,7 @@ CREATE POLICY "users can upload own postcard images"
         bucket_id = 'postcard-images'
         AND (storage.foldername(name))[1] = 'postcards'
         AND auth.uid()::text = (storage.foldername(name))[2]
+        AND NOT public.is_suspended()
     );
 
 CREATE POLICY "users can read related postcard images"
@@ -483,6 +684,10 @@ BEGIN
     VALUES (current_user_id)
     ON CONFLICT (id) DO NOTHING;
 
+    IF public.is_suspended(current_user_id) THEN
+        RAISE EXCEPTION '정지된 사용자는 엽서를 받을 수 없습니다.';
+    END IF;
+
     SELECT *
       INTO existing_delivery
       FROM public.postcard_deliveries d
@@ -496,6 +701,7 @@ BEGIN
           FROM public.postcards
          WHERE status = 'approved'
            AND author_id <> current_user_id
+           AND NOT public.is_suspended(author_id)
            AND NOT EXISTS (
              SELECT 1
                FROM public.postcard_deliveries d
@@ -524,8 +730,9 @@ BEGIN
         p.image_byte_size,
         existing_delivery.delivered_date,
         existing_delivery.created_at
-      FROM public.postcards p
+     FROM public.postcards p
      WHERE p.id = existing_delivery.postcard_id
-       AND p.status = 'approved';
+       AND p.status = 'approved'
+       AND NOT public.is_suspended(p.author_id);
 END;
 $$;

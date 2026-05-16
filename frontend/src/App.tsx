@@ -39,6 +39,12 @@ type UserAction = {
   action_type: 'not_interested' | 'hidden'
 }
 
+type Profile = {
+  id: string
+  suspended_at: string | null
+  suspension_reason: string | null
+}
+
 type AdminPostcard = AuthoredPostcard & {
   moderated_at: string | null
   moderation_note: string | null
@@ -54,9 +60,16 @@ type AdminReport = {
   handler_note: string | null
   postcard: {
     id: string
+    author_id: string
     content: string
     status: string
   } | null
+}
+
+type AdminUser = {
+  user_id: string
+  email: string | null
+  created_at: string
 }
 
 type RequestState =
@@ -81,6 +94,7 @@ type UploadedImage = {
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('write')
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -88,15 +102,22 @@ export function App() {
   const [todayImageUrl, setTodayImageUrl] = useState<string | null>(null)
   const [authoredPostcards, setAuthoredPostcards] = useState<AuthoredPostcard[]>([])
   const [receivedDeliveries, setReceivedDeliveries] = useState<ReceivedDelivery[]>([])
+  const [receivedImageUrls, setReceivedImageUrls] = useState<Record<string, string>>({})
   const [userActions, setUserActions] = useState<UserAction[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [pendingPostcards, setPendingPostcards] = useState<AdminPostcard[]>([])
   const [adminImageUrls, setAdminImageUrls] = useState<Record<string, string>>({})
   const [reports, setReports] = useState<AdminReport[]>([])
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [adminInviteEmail, setAdminInviteEmail] = useState('')
   const [reportReason, setReportReason] = useState('')
   const [historyReportReasons, setHistoryReportReasons] = useState<Record<string, string>>({})
+  const [moderationNotes, setModerationNotes] = useState<Record<string, string>>({})
+  const [reportNotes, setReportNotes] = useState<Record<string, string>>({})
+  const [suspensionReasons, setSuspensionReasons] = useState<Record<string, string>>({})
+  const [path, setPath] = useState(() => window.location.pathname)
   const [state, setState] = useState<RequestState>(emptyState)
 
   const imagePreviewUrl = useMemo(() => {
@@ -110,6 +131,9 @@ export function App() {
     )
     return receivedDeliveries.filter((delivery) => !hiddenPostcards.has(delivery.postcard_id))
   }, [receivedDeliveries, userActions])
+
+  const isAdminPath = path === '/admin'
+  const isSuspended = Boolean(profile?.suspended_at)
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
@@ -131,16 +155,20 @@ export function App() {
 
   useEffect(() => {
     if (!user) {
+      setProfile(null)
       setAuthoredPostcards([])
       setReceivedDeliveries([])
+      setReceivedImageUrls({})
       setUserActions([])
       setIsAdmin(false)
       setPendingPostcards([])
       setAdminImageUrls({})
       setReports([])
+      setAdminUsers([])
       return
     }
 
+    void refreshProfile()
     void refreshHistory()
     void refreshAdmin()
   }, [user])
@@ -151,12 +179,15 @@ export function App() {
     }
   }, [imagePreviewUrl])
 
-  async function signInAnonymously() {
-    if (!supabase) return
+  useEffect(() => {
+    const handlePopState = () => setPath(window.location.pathname)
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
-    setState({ type: 'loading', message: '익명 우체국 창구를 여는 중입니다.' })
-    const { error } = await supabase.auth.signInAnonymously()
-    setState(error ? { type: 'error', message: error.message } : emptyState)
+  function navigate(nextPath: string) {
+    window.history.pushState({}, '', nextPath)
+    setPath(nextPath)
   }
 
   async function signOut() {
@@ -165,6 +196,23 @@ export function App() {
     setToday(null)
     setTodayImageUrl(null)
     setState({ type: 'success', message: '조용히 문을 닫았습니다.' })
+  }
+
+  async function refreshProfile() {
+    if (!supabase || !user) return
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, suspended_at, suspension_reason')
+      .eq('id', user.id)
+      .single()
+
+    if (error) {
+      setProfile(null)
+      return
+    }
+
+    setProfile(data as Profile)
   }
 
   async function sendMagicLink() {
@@ -279,6 +327,10 @@ export function App() {
     if (!supabase || !user || !content.trim()) {
       return
     }
+    if (isSuspended) {
+      setState({ type: 'error', message: '정지된 계정은 엽서를 보낼 수 없습니다.' })
+      return
+    }
 
     setState({ type: 'loading', message: '엽서를 우체통에 넣는 중입니다.' })
 
@@ -315,6 +367,10 @@ export function App() {
 
   async function openTodayPostcard() {
     if (!supabase || !user) {
+      return
+    }
+    if (isSuspended) {
+      setState({ type: 'error', message: '정지된 계정은 엽서를 받을 수 없습니다.' })
       return
     }
 
@@ -373,7 +429,16 @@ export function App() {
     if (actionsResult.error) throw actionsResult.error
 
     setAuthoredPostcards((authoredResult.data ?? []) as AuthoredPostcard[])
-    setReceivedDeliveries((deliveriesResult.data ?? []) as unknown as ReceivedDelivery[])
+    const deliveries = (deliveriesResult.data ?? []) as unknown as ReceivedDelivery[]
+    setReceivedDeliveries(deliveries)
+    setReceivedImageUrls(
+      await loadImageUrlsByPostcardId(
+        deliveries.map((delivery) => ({
+          id: delivery.id,
+          image_path: delivery.postcard?.image_path ?? null,
+        })),
+      ),
+    )
     setUserActions((actionsResult.data ?? []) as UserAction[])
   }
 
@@ -384,12 +449,14 @@ export function App() {
     if (adminError || !adminRows?.length) {
       setIsAdmin(false)
       setPendingPostcards([])
+      setAdminImageUrls({})
       setReports([])
+      setAdminUsers([])
       return
     }
 
     setIsAdmin(true)
-    const [pendingResult, reportsResult] = await Promise.all([
+    const [pendingResult, reportsResult, adminUsersResult] = await Promise.all([
       supabase
         .from('postcards')
         .select('id, content, image_path, status, created_at, moderated_at, moderation_note')
@@ -397,18 +464,21 @@ export function App() {
         .order('created_at', { ascending: true }),
       supabase
         .from('postcard_reports')
-        .select('id, postcard_id, delivery_id, reason, status, created_at, handler_note, postcard:postcards(id, content, status)')
+        .select('id, postcard_id, delivery_id, reason, status, created_at, handler_note, postcard:postcards(id, author_id, content, status)')
         .eq('status', 'open')
         .order('created_at', { ascending: true }),
+      supabase.rpc('list_admin_users'),
     ])
 
     if (pendingResult.error) throw pendingResult.error
     if (reportsResult.error) throw reportsResult.error
+    if (adminUsersResult.error) throw adminUsersResult.error
 
     const pending = (pendingResult.data ?? []) as AdminPostcard[]
     setPendingPostcards(pending)
     setAdminImageUrls(await loadImageUrlsByPostcardId(pending))
     setReports((reportsResult.data ?? []) as unknown as AdminReport[])
+    setAdminUsers((adminUsersResult.data ?? []) as AdminUser[])
   }
 
   async function loadImageUrlsByPostcardId(postcards: Array<{ id: string; image_path: string | null }>) {
@@ -433,6 +503,10 @@ export function App() {
 
   async function createUserAction(delivery: TodayPostcard | ReceivedDelivery, actionType: 'not_interested' | 'hidden') {
     if (!supabase || !user) return
+    if (isSuspended) {
+      setState({ type: 'error', message: '정지된 계정은 엽서 액션을 남길 수 없습니다.' })
+      return
+    }
 
     const deliveryId = 'delivery_id' in delivery ? delivery.delivery_id : delivery.id
     const postcardId = delivery.postcard_id
@@ -460,6 +534,10 @@ export function App() {
 
   async function createReport(delivery: TodayPostcard | ReceivedDelivery, reason: string) {
     if (!supabase || !user || !reason.trim()) return
+    if (isSuspended) {
+      setState({ type: 'error', message: '정지된 계정은 신고를 접수할 수 없습니다.' })
+      return
+    }
 
     const deliveryId = 'delivery_id' in delivery ? delivery.delivery_id : delivery.id
     const postcardId = delivery.postcard_id
@@ -490,7 +568,7 @@ export function App() {
     const params =
       action === 'approve'
         ? { target_postcard_id: postcardId }
-        : { target_postcard_id: postcardId, rejection_note: null }
+        : { target_postcard_id: postcardId, rejection_note: moderationNotes[postcardId]?.trim() || null }
 
     const { error } = await supabase.rpc(rpcName, params)
     if (error) {
@@ -499,6 +577,7 @@ export function App() {
     }
 
     await refreshAdmin()
+    setModerationNotes((previous) => ({ ...previous, [postcardId]: '' }))
     setState({ type: 'success', message: '처리했습니다.' })
   }
 
@@ -510,7 +589,7 @@ export function App() {
       target_report_id: reportId,
       next_status: shouldHidePostcard ? 'actioned' : 'dismissed',
       should_hide_postcard: shouldHidePostcard,
-      note: null,
+      note: reportNotes[reportId]?.trim() || null,
     })
 
     if (error) {
@@ -519,7 +598,62 @@ export function App() {
     }
 
     await refreshAdmin()
+    setReportNotes((previous) => ({ ...previous, [reportId]: '' }))
     setState({ type: 'success', message: '신고를 처리했습니다.' })
+  }
+
+  async function inviteAdminUser() {
+    if (!supabase || !adminInviteEmail.trim()) return
+
+    setState({ type: 'loading', message: '관리자 권한을 부여하는 중입니다.' })
+    const { error } = await supabase.rpc('invite_admin_user', {
+      target_email: adminInviteEmail.trim(),
+    })
+
+    if (error) {
+      setState({ type: 'error', message: error.message })
+      return
+    }
+
+    setAdminInviteEmail('')
+    await refreshAdmin()
+    setState({ type: 'success', message: '관리자 권한을 부여했습니다.' })
+  }
+
+  async function removeAdminUser(userId: string) {
+    if (!supabase) return
+
+    setState({ type: 'loading', message: '관리자 권한을 회수하는 중입니다.' })
+    const { error } = await supabase.rpc('remove_admin_user', {
+      target_user_id: userId,
+    })
+
+    if (error) {
+      setState({ type: 'error', message: error.message })
+      return
+    }
+
+    await refreshAdmin()
+    setState({ type: 'success', message: '관리자 권한을 회수했습니다.' })
+  }
+
+  async function suspendUser(userId: string, reportId: string) {
+    if (!supabase) return
+
+    setState({ type: 'loading', message: '사용자를 정지하는 중입니다.' })
+    const { error } = await supabase.rpc('suspend_user', {
+      target_user_id: userId,
+      reason: suspensionReasons[reportId]?.trim() || null,
+    })
+
+    if (error) {
+      setState({ type: 'error', message: error.message })
+      return
+    }
+
+    setSuspensionReasons((previous) => ({ ...previous, [reportId]: '' }))
+    await refreshAdmin()
+    setState({ type: 'success', message: '사용자를 정지했습니다.' })
   }
 
   if (!hasSupabaseConfig) {
@@ -539,15 +673,12 @@ export function App() {
       <section className="hero">
         <p className="eyebrow">문라이터</p>
         <h1>오늘의 마음을 누군가에게.</h1>
-        <p>사진 한 장과 짧은 문장을 조용히 우체통에 넣어보세요.</p>
+        <p>{isAdminPath ? '조용히 도착한 엽서를 살피고 필요한 처리를 남깁니다.' : '사진 한 장과 짧은 문장을 조용히 우체통에 넣어보세요.'}</p>
         {!user && (
           <div className="hero-actions">
             <button onClick={() => signInWithProvider('google')}>구글로 시작</button>
             <button className="secondary-dark-button" onClick={() => signInWithProvider('kakao')}>
               카카오로 시작
-            </button>
-            <button className="text-button" onClick={signInAnonymously}>
-              익명으로 둘러보기
             </button>
           </div>
         )}
@@ -556,23 +687,38 @@ export function App() {
       {user && (
         <>
           <nav className="tabs" aria-label="주요 화면">
-            <button className={activeTab === 'write' ? 'tab active' : 'tab'} onClick={() => setActiveTab('write')}>
+            <button className={!isAdminPath && activeTab === 'write' ? 'tab active' : 'tab'} onClick={() => {
+              navigate('/')
+              setActiveTab('write')
+            }}>
               쓰기
             </button>
-            <button className={activeTab === 'history' ? 'tab active' : 'tab'} onClick={() => setActiveTab('history')}>
+            <button className={!isAdminPath && activeTab === 'history' ? 'tab active' : 'tab'} onClick={() => {
+              navigate('/')
+              setActiveTab('history')
+            }}>
               기록
             </button>
-            <button className={activeTab === 'account' ? 'tab active' : 'tab'} onClick={() => setActiveTab('account')}>
+            <button className={!isAdminPath && activeTab === 'account' ? 'tab active' : 'tab'} onClick={() => {
+              navigate('/')
+              setActiveTab('account')
+            }}>
               계정
             </button>
             {isAdmin && (
-              <button className={activeTab === 'admin' ? 'tab active' : 'tab'} onClick={() => setActiveTab('admin')}>
+              <button className={isAdminPath ? 'tab active' : 'tab'} onClick={() => navigate('/admin')}>
                 관리
               </button>
             )}
           </nav>
 
-          {activeTab === 'write' && (
+          {isSuspended && (
+            <section className="status error account-warning">
+              정지된 계정입니다. {profile?.suspension_reason ? `사유: ${profile.suspension_reason}` : '관리자에게 문의해주세요.'}
+            </section>
+          )}
+
+          {!isAdminPath && activeTab === 'write' && (
             <section className="workspace">
               <section className="panel">
                 <h2>엽서 쓰기</h2>
@@ -607,7 +753,7 @@ export function App() {
                 </label>
                 <div className="actions">
                   <span>{content.length}/500</span>
-                  <button disabled={!content.trim() || state.type === 'loading'} onClick={writePostcard}>
+                  <button disabled={!content.trim() || state.type === 'loading' || isSuspended} onClick={writePostcard}>
                     보내기
                   </button>
                 </div>
@@ -617,15 +763,15 @@ export function App() {
                 <h2>오늘의 엽서</h2>
                 {todayImageUrl && <img className="received-image" src={todayImageUrl} alt="오늘 받은 엽서 사진" />}
                 {today ? <p className="postcard-text">{today.content}</p> : <p>아직 열린 엽서가 없습니다.</p>}
-                <button onClick={openTodayPostcard} disabled={state.type === 'loading'}>
+                <button onClick={openTodayPostcard} disabled={state.type === 'loading' || isSuspended}>
                   오늘의 엽서 받기
                 </button>
                 {today && (
                   <div className="quiet-actions">
-                    <button className="secondary-button" onClick={() => createUserAction(today, 'not_interested')}>
+                    <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(today, 'not_interested')}>
                       관심없음
                     </button>
-                    <button className="secondary-button" onClick={() => createUserAction(today, 'hidden')}>
+                    <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(today, 'hidden')}>
                       숨김
                     </button>
                     <label>
@@ -637,7 +783,7 @@ export function App() {
                         placeholder="관리자에게 전할 내용을 적어주세요."
                       />
                     </label>
-                    <button disabled={!reportReason.trim()} onClick={() => createReport(today, reportReason)}>
+                    <button disabled={!reportReason.trim() || isSuspended} onClick={() => createReport(today, reportReason)}>
                       신고
                     </button>
                   </div>
@@ -646,7 +792,7 @@ export function App() {
             </section>
           )}
 
-          {activeTab === 'history' && (
+          {!isAdminPath && activeTab === 'history' && (
             <section className="workspace">
               <section className="panel">
                 <div className="panel-header">
@@ -674,12 +820,15 @@ export function App() {
                   {visibleReceivedDeliveries.map((delivery) => (
                     <article className="postcard-row" key={delivery.id}>
                       <time>{delivery.delivered_date}</time>
+                      {receivedImageUrls[delivery.id] && (
+                        <img className="admin-image" src={receivedImageUrls[delivery.id]} alt="받은 엽서 사진" />
+                      )}
                       <p>{delivery.postcard?.content ?? '열 수 없는 엽서입니다.'}</p>
                       <div className="row-actions">
-                        <button className="secondary-button" onClick={() => createUserAction(delivery, 'not_interested')}>
+                        <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(delivery, 'not_interested')}>
                           관심없음
                         </button>
-                        <button className="secondary-button" onClick={() => createUserAction(delivery, 'hidden')}>
+                        <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(delivery, 'hidden')}>
                           숨김
                         </button>
                       </div>
@@ -695,7 +844,7 @@ export function App() {
                         />
                       </label>
                       <button
-                        disabled={!(historyReportReasons[delivery.id] ?? '').trim()}
+                        disabled={!(historyReportReasons[delivery.id] ?? '').trim() || isSuspended}
                         onClick={() => createReport(delivery, historyReportReasons[delivery.id] ?? '')}
                       >
                         신고
@@ -707,7 +856,7 @@ export function App() {
             </section>
           )}
 
-          {activeTab === 'account' && (
+          {!isAdminPath && activeTab === 'account' && (
             <section className="workspace">
               <section className="panel">
                 <h2>로그인</h2>
@@ -739,9 +888,6 @@ export function App() {
                   <button onClick={signUpWithPassword} disabled={!email.trim() || password.length < 6}>
                     가입
                   </button>
-                  <button className="secondary-button" onClick={signInAnonymously}>
-                    익명
-                  </button>
                 </div>
               </section>
 
@@ -753,8 +899,16 @@ export function App() {
             </section>
           )}
 
-          {activeTab === 'admin' && isAdmin && (
-            <section className="workspace">
+          {isAdminPath && !isAdmin && (
+            <section className="panel narrow-panel">
+              <h2>관리자 권한이 필요합니다.</h2>
+              <p>최초 관리자 1명은 Supabase Studio에서 수동 등록한 뒤 접근할 수 있습니다.</p>
+              <button onClick={() => navigate('/')}>돌아가기</button>
+            </section>
+          )}
+
+          {isAdminPath && isAdmin && (
+            <section className="admin-layout">
               <section className="panel">
                 <div className="panel-header">
                   <h2>승인 대기</h2>
@@ -770,6 +924,17 @@ export function App() {
                         <img className="admin-image" src={adminImageUrls[postcard.id]} alt="승인 대기 엽서 사진" />
                       )}
                       <p>{postcard.content}</p>
+                      <label>
+                        반려 사유
+                        <input
+                          value={moderationNotes[postcard.id] ?? ''}
+                          maxLength={500}
+                          onChange={(event) =>
+                            setModerationNotes((previous) => ({ ...previous, [postcard.id]: event.target.value }))
+                          }
+                          placeholder="반려할 때 작성자 기록에 남길 메모"
+                        />
+                      </label>
                       <div className="row-actions">
                         <button onClick={() => moderatePostcard(postcard.id, 'approve')}>승인</button>
                         <button className="secondary-button" onClick={() => moderatePostcard(postcard.id, 'reject')}>
@@ -790,12 +955,73 @@ export function App() {
                       <span className="badge open">{report.status}</span>
                       <p>{report.postcard?.content ?? '엽서를 불러올 수 없습니다.'}</p>
                       <p className="field-note">{report.reason}</p>
+                      <label>
+                        처리 메모
+                        <input
+                          value={reportNotes[report.id] ?? ''}
+                          maxLength={500}
+                          onChange={(event) =>
+                            setReportNotes((previous) => ({ ...previous, [report.id]: event.target.value }))
+                          }
+                          placeholder="신고 처리 메모"
+                        />
+                      </label>
+                      <label>
+                        사용자 정지 사유
+                        <input
+                          value={suspensionReasons[report.id] ?? ''}
+                          maxLength={500}
+                          onChange={(event) =>
+                            setSuspensionReasons((previous) => ({ ...previous, [report.id]: event.target.value }))
+                          }
+                          placeholder="작성자를 정지할 때 남길 사유"
+                        />
+                      </label>
                       <div className="row-actions">
                         <button onClick={() => resolveReport(report.id, true)}>숨김 처리</button>
                         <button className="secondary-button" onClick={() => resolveReport(report.id, false)}>
                           유지
                         </button>
+                        {report.postcard?.author_id && (
+                          <button
+                            className="secondary-button"
+                            disabled={!suspensionReasons[report.id]?.trim()}
+                            onClick={() => suspendUser(report.postcard!.author_id, report.id)}
+                          >
+                            작성자 정지
+                          </button>
+                        )}
                       </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <h2>관리자 계정</h2>
+                <label>
+                  초대할 이메일
+                  <input
+                    value={adminInviteEmail}
+                    onChange={(event) => setAdminInviteEmail(event.target.value)}
+                    placeholder="admin@example.com"
+                  />
+                </label>
+                <button disabled={!adminInviteEmail.trim()} onClick={inviteAdminUser}>
+                  관리자 권한 부여
+                </button>
+                <div className="list admin-users">
+                  {adminUsers.map((adminUser) => (
+                    <article className="postcard-row" key={adminUser.user_id}>
+                      <p className="mono">{adminUser.email ?? adminUser.user_id}</p>
+                      <time>{new Date(adminUser.created_at).toLocaleString()}</time>
+                      <button
+                        className="secondary-button"
+                        disabled={adminUser.user_id === user.id}
+                        onClick={() => removeAdminUser(adminUser.user_id)}
+                      >
+                        권한 회수
+                      </button>
                     </article>
                   ))}
                 </div>
