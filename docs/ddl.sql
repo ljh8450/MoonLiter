@@ -6,5 +6,6 @@
 -- - 202605160001_postcard_image_storage_policy.sql
 -- - 202605160002_postcard_approval_and_path_policy.sql
 -- - 202605170001_admin_reports_actions.sql
+-- - 202605170002_report_insert_policy.sql
 --
 -- Android/Spring Boot + MySQL 기반 DDL은 향후 구현 경로로 보류한다.

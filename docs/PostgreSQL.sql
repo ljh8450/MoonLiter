@@ -5,6 +5,7 @@
 -- - supabase/migrations/202605160001_postcard_image_storage_policy.sql
 -- - supabase/migrations/202605160002_postcard_approval_and_path_policy.sql
 -- - supabase/migrations/202605170001_admin_reports_actions.sql
+-- - supabase/migrations/202605170002_report_insert_policy.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -205,6 +206,10 @@ CREATE POLICY "users can create own reports"
     ON public.postcard_reports FOR INSERT
     WITH CHECK (
         auth.uid() = reporter_id
+        AND status = 'open'
+        AND handled_by IS NULL
+        AND handled_at IS NULL
+        AND handler_note IS NULL
         AND EXISTS (
             SELECT 1
               FROM public.postcard_deliveries d
