@@ -4,11 +4,29 @@
 -- - supabase/migrations/202605130001_initial_web_mvp.sql
 -- - supabase/migrations/202605160001_postcard_image_storage_policy.sql
 -- - supabase/migrations/202605160002_postcard_approval_and_path_policy.sql
+-- - supabase/migrations/202605170001_admin_reports_actions.sql
+-- - supabase/migrations/202605170002_report_insert_policy.sql
+-- - supabase/migrations/202605170003_admin_user_management.sql
+-- - supabase/migrations/202605170004_fix_invite_admin_user.sql
+-- - supabase/migrations/202605170005_fix_invite_admin_user_upsert.sql
+-- - supabase/migrations/202605170006_fix_invite_admin_user_conflict.sql
+-- - supabase/migrations/202605170007_user_suspensions_and_login_required.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    suspended_at TIMESTAMPTZ,
+    suspended_by UUID,
+    suspension_reason TEXT CHECK (
+        suspension_reason IS NULL
+        OR char_length(trim(suspension_reason)) BETWEEN 1 AND 500
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -26,6 +44,12 @@ CREATE TABLE IF NOT EXISTS public.postcards (
         OR (image_byte_size > 0 AND image_byte_size <= 10485760)
     ),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'hidden')),
+    moderated_by UUID REFERENCES public.admin_users(user_id) ON DELETE SET NULL,
+    moderated_at TIMESTAMPTZ,
+    moderation_note TEXT CHECK (
+        moderation_note IS NULL
+        OR char_length(trim(moderation_note)) BETWEEN 1 AND 500
+    ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -38,11 +62,42 @@ CREATE TABLE IF NOT EXISTS public.postcard_deliveries (
     UNIQUE (receiver_id, delivered_date)
 );
 
+CREATE TABLE IF NOT EXISTS public.postcard_user_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    postcard_id UUID NOT NULL REFERENCES public.postcards(id) ON DELETE CASCADE,
+    delivery_id UUID NOT NULL REFERENCES public.postcard_deliveries(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    action_type TEXT NOT NULL CHECK (action_type IN ('not_interested', 'hidden')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, postcard_id, action_type)
+);
+
+CREATE TABLE IF NOT EXISTS public.postcard_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    postcard_id UUID NOT NULL REFERENCES public.postcards(id) ON DELETE CASCADE,
+    delivery_id UUID NOT NULL REFERENCES public.postcard_deliveries(id) ON DELETE CASCADE,
+    reporter_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL CHECK (char_length(trim(reason)) BETWEEN 1 AND 500),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewed', 'dismissed', 'actioned')),
+    handled_by UUID REFERENCES public.admin_users(user_id) ON DELETE SET NULL,
+    handled_at TIMESTAMPTZ,
+    handler_note TEXT CHECK (
+        handler_note IS NULL
+        OR char_length(trim(handler_note)) BETWEEN 1 AND 500
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (reporter_id, postcard_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_postcards_author_id
     ON public.postcards(author_id);
 
 CREATE INDEX IF NOT EXISTS idx_postcards_status
     ON public.postcards(status);
+
+CREATE INDEX IF NOT EXISTS idx_postcards_moderated_by
+    ON public.postcards(moderated_by)
+    WHERE moderated_by IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_postcards_image_path
     ON public.postcards(image_path)
@@ -51,9 +106,225 @@ CREATE INDEX IF NOT EXISTS idx_postcards_image_path
 CREATE INDEX IF NOT EXISTS idx_postcard_deliveries_receiver_date
     ON public.postcard_deliveries(receiver_id, delivered_date);
 
+CREATE INDEX IF NOT EXISTS idx_postcard_user_actions_user
+    ON public.postcard_user_actions(user_id, action_type);
+
+CREATE INDEX IF NOT EXISTS idx_postcard_user_actions_delivery
+    ON public.postcard_user_actions(delivery_id);
+
+CREATE INDEX IF NOT EXISTS idx_postcard_reports_status
+    ON public.postcard_reports(status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_postcard_reports_reporter
+    ON public.postcard_reports(reporter_id, created_at);
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.postcards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.postcard_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.postcard_user_actions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.postcard_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT auth.uid() IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+             FROM public.admin_users a
+            WHERE a.user_id = auth.uid()
+       );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_suspended(target_user_id UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT target_user_id IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+             FROM public.profiles p
+            WHERE p.id = target_user_id
+              AND p.suspended_at IS NOT NULL
+       );
+$$;
+
+CREATE OR REPLACE FUNCTION public.list_admin_users()
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        a.user_id,
+        u.email::TEXT,
+        a.created_at
+      FROM public.admin_users a
+      JOIN auth.users u
+        ON u.id = a.user_id
+     ORDER BY a.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.invite_admin_user(target_email TEXT)
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    target_user auth.users%ROWTYPE;
+    inserted_admin public.admin_users%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    SELECT *
+      INTO target_user
+      FROM auth.users u
+     WHERE lower(u.email) = lower(trim(target_email))
+     LIMIT 1;
+
+    IF target_user.id IS NULL THEN
+        RAISE EXCEPTION '해당 이메일의 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    INSERT INTO public.profiles (id)
+    VALUES (target_user.id)
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.admin_users (user_id)
+    VALUES (target_user.id)
+    ON CONFLICT ON CONSTRAINT admin_users_pkey DO NOTHING;
+
+    SELECT *
+      INTO inserted_admin
+      FROM public.admin_users a
+     WHERE a.user_id = target_user.id;
+
+    RETURN QUERY
+    SELECT
+        inserted_admin.user_id,
+        target_user.email::TEXT,
+        inserted_admin.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.remove_admin_user(target_user_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    admin_count INTEGER;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    IF target_user_id = auth.uid() THEN
+        RAISE EXCEPTION '자기 자신의 관리자 권한은 회수할 수 없습니다.';
+    END IF;
+
+    SELECT count(*)
+      INTO admin_count
+      FROM public.admin_users;
+
+    IF admin_count <= 1 THEN
+        RAISE EXCEPTION '마지막 관리자 권한은 회수할 수 없습니다.';
+    END IF;
+
+    DELETE FROM public.admin_users
+     WHERE user_id = target_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.suspend_user(
+    target_user_id UUID,
+    reason TEXT DEFAULT NULL
+)
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_profile public.profiles%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    IF target_user_id = current_user_id THEN
+        RAISE EXCEPTION '자기 자신은 정지할 수 없습니다.';
+    END IF;
+
+    UPDATE public.profiles
+       SET suspended_at = NOW(),
+           suspended_by = current_user_id,
+           suspension_reason = NULLIF(trim(reason), '')
+     WHERE id = target_user_id
+     RETURNING * INTO updated_profile;
+
+    IF updated_profile.id IS NULL THEN
+        RAISE EXCEPTION '정지할 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_profile;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.unsuspend_user(target_user_id UUID)
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    updated_profile public.profiles%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    UPDATE public.profiles
+       SET suspended_at = NULL,
+           suspended_by = NULL,
+           suspension_reason = NULL
+     WHERE id = target_user_id
+     RETURNING * INTO updated_profile;
+
+    IF updated_profile.id IS NULL THEN
+        RAISE EXCEPTION '정지 해제할 사용자를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_profile;
+END;
+$$;
 
 CREATE POLICY "profiles can insert own row"
     ON public.profiles FOR INSERT
@@ -63,11 +334,16 @@ CREATE POLICY "profiles can read own row"
     ON public.profiles FOR SELECT
     USING (auth.uid() = id);
 
+CREATE POLICY "admins can read admin users"
+    ON public.admin_users FOR SELECT
+    USING (public.is_admin());
+
 CREATE POLICY "users can create own postcards"
     ON public.postcards FOR INSERT
     WITH CHECK (
         auth.uid() = author_id
         AND status = 'pending'
+        AND NOT public.is_suspended()
     );
 
 CREATE POLICY "users can read own postcards"
@@ -77,6 +353,8 @@ CREATE POLICY "users can read own postcards"
 CREATE POLICY "users can read delivered postcards"
     ON public.postcards FOR SELECT
     USING (
+        status = 'approved'
+        AND
         EXISTS (
             SELECT 1
               FROM public.postcard_deliveries d
@@ -85,9 +363,69 @@ CREATE POLICY "users can read delivered postcards"
         )
     );
 
+CREATE POLICY "admins can read all postcards"
+    ON public.postcards FOR SELECT
+    USING (public.is_admin());
+
 CREATE POLICY "users can read own deliveries"
     ON public.postcard_deliveries FOR SELECT
     USING (auth.uid() = receiver_id);
+
+CREATE POLICY "admins can read all deliveries"
+    ON public.postcard_deliveries FOR SELECT
+    USING (public.is_admin());
+
+CREATE POLICY "users can create own postcard actions"
+    ON public.postcard_user_actions FOR INSERT
+    WITH CHECK (
+        auth.uid() = user_id
+        AND NOT public.is_suspended()
+        AND EXISTS (
+            SELECT 1
+              FROM public.postcard_deliveries d
+             WHERE d.id = delivery_id
+               AND d.postcard_id = postcard_user_actions.postcard_id
+               AND d.receiver_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "users can read own postcard actions"
+    ON public.postcard_user_actions FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "users can delete own postcard actions"
+    ON public.postcard_user_actions FOR DELETE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "admins can read all postcard actions"
+    ON public.postcard_user_actions FOR SELECT
+    USING (public.is_admin());
+
+CREATE POLICY "users can create own reports"
+    ON public.postcard_reports FOR INSERT
+    WITH CHECK (
+        auth.uid() = reporter_id
+        AND NOT public.is_suspended()
+        AND status = 'open'
+        AND handled_by IS NULL
+        AND handled_at IS NULL
+        AND handler_note IS NULL
+        AND EXISTS (
+            SELECT 1
+              FROM public.postcard_deliveries d
+             WHERE d.id = delivery_id
+               AND d.postcard_id = postcard_reports.postcard_id
+               AND d.receiver_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "users can read own reports"
+    ON public.postcard_reports FOR SELECT
+    USING (auth.uid() = reporter_id);
+
+CREATE POLICY "admins can read all reports"
+    ON public.postcard_reports FOR SELECT
+    USING (public.is_admin());
 
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('postcard-images', 'postcard-images', false)
@@ -105,6 +443,7 @@ CREATE POLICY "users can upload own postcard images"
         bucket_id = 'postcard-images'
         AND (storage.foldername(name))[1] = 'postcards'
         AND auth.uid()::text = (storage.foldername(name))[2]
+        AND NOT public.is_suspended()
     );
 
 CREATE POLICY "users can read related postcard images"
@@ -130,6 +469,13 @@ CREATE POLICY "users can read related postcard images"
                     ON d.postcard_id = p.id
                  WHERE p.image_path = storage.objects.name
                    AND d.receiver_id = auth.uid()
+                   AND p.status = 'approved'
+            )
+            OR EXISTS (
+                SELECT 1
+                  FROM public.postcards p
+                 WHERE p.image_path = storage.objects.name
+                   AND public.is_admin()
             )
         )
     );
@@ -153,6 +499,154 @@ BEGIN
     VALUES (NEW.id)
     ON CONFLICT (id) DO NOTHING;
     RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.approve_postcard(target_postcard_id UUID)
+RETURNS public.postcards
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_postcard public.postcards%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    UPDATE public.postcards
+       SET status = 'approved',
+           moderated_by = current_user_id,
+           moderated_at = NOW(),
+           moderation_note = NULL
+     WHERE id = target_postcard_id
+       AND status = 'pending'
+     RETURNING * INTO updated_postcard;
+
+    IF updated_postcard.id IS NULL THEN
+        RAISE EXCEPTION '승인할 대기 엽서를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_postcard;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reject_postcard(
+    target_postcard_id UUID,
+    rejection_note TEXT DEFAULT NULL
+)
+RETURNS public.postcards
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_postcard public.postcards%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    UPDATE public.postcards
+       SET status = 'rejected',
+           moderated_by = current_user_id,
+           moderated_at = NOW(),
+           moderation_note = NULLIF(trim(rejection_note), '')
+     WHERE id = target_postcard_id
+       AND status = 'pending'
+     RETURNING * INTO updated_postcard;
+
+    IF updated_postcard.id IS NULL THEN
+        RAISE EXCEPTION '반려할 대기 엽서를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_postcard;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.hide_postcard(
+    target_postcard_id UUID,
+    hide_note TEXT DEFAULT NULL
+)
+RETURNS public.postcards
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_postcard public.postcards%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    UPDATE public.postcards
+       SET status = 'hidden',
+           moderated_by = current_user_id,
+           moderated_at = NOW(),
+           moderation_note = NULLIF(trim(hide_note), '')
+     WHERE id = target_postcard_id
+       AND status IN ('approved', 'pending')
+     RETURNING * INTO updated_postcard;
+
+    IF updated_postcard.id IS NULL THEN
+        RAISE EXCEPTION '숨김 처리할 엽서를 찾을 수 없습니다.';
+    END IF;
+
+    RETURN updated_postcard;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.resolve_postcard_report(
+    target_report_id UUID,
+    next_status TEXT,
+    should_hide_postcard BOOLEAN DEFAULT FALSE,
+    note TEXT DEFAULT NULL
+)
+RETURNS public.postcard_reports
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    updated_report public.postcard_reports%ROWTYPE;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    IF next_status NOT IN ('reviewed', 'dismissed', 'actioned') THEN
+        RAISE EXCEPTION '지원하지 않는 신고 처리 상태입니다.';
+    END IF;
+
+    UPDATE public.postcard_reports
+       SET status = next_status,
+           handled_by = current_user_id,
+           handled_at = NOW(),
+           handler_note = NULLIF(trim(note), '')
+     WHERE id = target_report_id
+       AND status = 'open'
+     RETURNING * INTO updated_report;
+
+    IF updated_report.id IS NULL THEN
+        RAISE EXCEPTION '처리할 신고를 찾을 수 없습니다.';
+    END IF;
+
+    IF should_hide_postcard THEN
+        UPDATE public.postcards
+           SET status = 'hidden',
+               moderated_by = current_user_id,
+               moderated_at = NOW(),
+               moderation_note = NULLIF(trim(note), '')
+         WHERE id = updated_report.postcard_id;
+    END IF;
+
+    RETURN updated_report;
 END;
 $$;
 
@@ -190,6 +684,10 @@ BEGIN
     VALUES (current_user_id)
     ON CONFLICT (id) DO NOTHING;
 
+    IF public.is_suspended(current_user_id) THEN
+        RAISE EXCEPTION '정지된 사용자는 엽서를 받을 수 없습니다.';
+    END IF;
+
     SELECT *
       INTO existing_delivery
       FROM public.postcard_deliveries d
@@ -203,6 +701,7 @@ BEGIN
           FROM public.postcards
          WHERE status = 'approved'
            AND author_id <> current_user_id
+           AND NOT public.is_suspended(author_id)
            AND NOT EXISTS (
              SELECT 1
                FROM public.postcard_deliveries d
@@ -231,7 +730,9 @@ BEGIN
         p.image_byte_size,
         existing_delivery.delivered_date,
         existing_delivery.created_at
-      FROM public.postcards p
-     WHERE p.id = existing_delivery.postcard_id;
+     FROM public.postcards p
+     WHERE p.id = existing_delivery.postcard_id
+       AND p.status = 'approved'
+       AND NOT public.is_suspended(p.author_id);
 END;
 $$;

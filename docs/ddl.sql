@@ -5,5 +5,12 @@
 -- - 202605130001_initial_web_mvp.sql
 -- - 202605160001_postcard_image_storage_policy.sql
 -- - 202605160002_postcard_approval_and_path_policy.sql
+-- - 202605170001_admin_reports_actions.sql
+-- - 202605170002_report_insert_policy.sql
+-- - 202605170003_admin_user_management.sql
+-- - 202605170004_fix_invite_admin_user.sql
+-- - 202605170005_fix_invite_admin_user_upsert.sql
+-- - 202605170006_fix_invite_admin_user_conflict.sql
+-- - 202605170007_user_suspensions_and_login_required.sql
 --
 -- Android/Spring Boot + MySQL 기반 DDL은 향후 구현 경로로 보류한다.
