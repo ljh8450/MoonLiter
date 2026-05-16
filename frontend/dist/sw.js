@@ -1,5 +1,5 @@
-const CACHE_NAME = 'moonliter-web-v1'
-const APP_SHELL = ['/', '/manifest.webmanifest']
+const CACHE_NAME = 'moonliter-web-v2'
+const APP_SHELL = ['/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)))
@@ -20,7 +20,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request)),
-  )
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request))
+    return
+  }
+
+  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)))
 })

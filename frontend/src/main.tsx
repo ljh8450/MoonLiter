@@ -11,8 +11,11 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // PWA registration failure should not block the MVP app.
-    })
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => registration.update())
+      .catch(() => {
+        // PWA registration failure should not block the MVP app.
+      })
   })
 }
