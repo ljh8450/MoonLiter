@@ -37,6 +37,7 @@ await supabase.auth.signInAnonymously()
 - Supabase Auth에서 익명 로그인이 활성화되어 있어야 한다.
 - 신규 사용자가 생성되면 `auth.users` 트리거가 `public.profiles` 행을 생성한다.
 - RPC에서도 현재 사용자 프로필이 없으면 보정 생성한다.
+- 이메일 로그인 또는 이메일 매직 링크는 후속 인증/관리자 확장 계획에서 구현한다.
 
 ## 사진 업로드
 
@@ -45,7 +46,7 @@ await supabase.auth.signInAnonymously()
 ```ts
 await supabase.storage
   .from('postcard-images')
-  .upload(`${user.id}/${crypto.randomUUID()}.${extension}`, file, {
+  .upload(`postcards/${user.id}/${crypto.randomUUID()}.${extension}`, file, {
     contentType: file.type,
     upsert: false,
   })
@@ -54,7 +55,7 @@ await supabase.storage
 ### 저장 경로
 
 ```text
-{auth.users.id}/{random_uuid}.{extension}
+postcards/{auth.users.id}/{random_uuid}.{extension}
 ```
 
 ### 검증 규칙
@@ -89,16 +90,19 @@ content: 1자 이상 500자 이하 문장
 image_path: Storage object path, 사진이 없으면 null
 image_content_type: image/jpeg, image/png, image/webp 중 하나, 사진이 없으면 null
 image_byte_size: 1 이상 10MB 이하 byte 크기, 사진이 없으면 null
-status: 기본값 deliverable
+status: 기본값 pending
 ```
 
 ### 검증 규칙
 
 - `author_id`는 현재 로그인 사용자와 같아야 한다.
+- 새 엽서는 기본적으로 `pending` 상태로 생성된다.
+- 클라이언트는 `approved` 상태의 엽서를 직접 생성하거나 변경할 수 없다.
 - `content`는 공백 제거 후 1자 이상 500자 이하여야 한다.
 - `image_path`에는 공개 URL이 아니라 Storage object path를 저장한다.
 - `image_content_type`과 `image_byte_size`는 클라이언트 검증값이며, DB check constraint와 Storage bucket 제한으로 한 번 더 제한한다.
 - Storage 업로드 성공 후 엽서 저장이 실패하면 클라이언트는 방금 업로드한 object 삭제를 시도한다.
+- DB insert 실패 후 즉시 삭제가 실패해 남은 고아 파일의 정기 정리는 후속 인증/관리자 확장 계획에서 구현한다.
 
 ## 오늘의 엽서 받기
 
@@ -127,12 +131,13 @@ const { data, error } = await supabase.rpc('assign_today_postcard')
 
 - 같은 사용자는 같은 UTC 날짜에 하나의 엽서만 배정받는다.
 - 자기 자신이 작성한 엽서는 배정하지 않는다.
+- `approved` 상태의 엽서만 배정한다.
 - 이미 오늘 배정받은 엽서가 있으면 기존 배정을 반환한다.
 - 배정 가능한 엽서가 없으면 RPC 예외가 발생한다.
 
 ## 오늘의 엽서 이미지 표시
 
-RPC 응답의 `image_path`가 있으면 signed URL을 생성해 표시한다.
+RPC 응답의 `image_path`가 있으면 권한 확인을 거쳐 signed URL을 생성해 표시한다.
 
 ```ts
 await supabase.storage
@@ -146,20 +151,23 @@ await supabase.storage
 - 화면 표시 시점에 `image_path`로 1시간짜리 signed URL을 생성한다.
 - `image_path`가 없으면 문장만 표시한다.
 - Storage object는 작성자 또는 오늘의 엽서로 배정받은 수신자만 읽을 수 있다.
+- 클라이언트가 임의의 `image_path`로 signed URL을 요청하는 흐름은 피한다.
+- 수신자 화면에는 작성자 계정, 이메일, 소셜 프로필, `author_id`를 노출하지 않는다.
 
 ## 주요 오류 상황
 
 - Supabase 환경 변수가 없으면 웹앱은 설정 필요 화면을 표시한다.
 - 익명 로그인이 비활성화되어 있으면 로그인에 실패한다.
 - Storage 버킷이나 정책이 없으면 사진 업로드에 실패한다.
-- 배정 가능한 엽서가 없으면 오늘의 엽서 받기에 실패한다.
+- 승인된 배정 가능 엽서가 없으면 오늘의 엽서 받기에 실패한다.
 - signed URL 생성 권한이 없으면 이미지 표시가 실패한다.
 
 ## 미구현 범위
 
 - Android/Spring Boot REST API.
 - presigned URL 기반 외부 오브젝트 스토리지 직접 업로드.
-- 운영 로그인 고도화.
+- 이메일 로그인, 소셜 로그인, 운영 로그인 고도화.
 - 엽서 저장, 반응, 신고, 차단.
 - 관리자 검수 API.
+- 고아 파일 정기 정리.
 - 푸시 알림.

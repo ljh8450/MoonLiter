@@ -22,7 +22,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - Supabase Postgres
   - MVP에서는 엽서당 이미지 1장만 허용한다.
   - 별도 `media_files` 테이블 없이 `postcards` row에 이미지 메타데이터를 nullable 컬럼으로 저장한다.
-  - 추천 컬럼은 `author_user_id`, `status`, `image_path`, `image_content_type`, `image_byte_size`다.
+  - 추천 컬럼은 기존 Supabase 스키마 명명에 맞춰 `author_id`, `status`, `image_path`, `image_content_type`, `image_byte_size`다.
   - 새 엽서는 기본적으로 `pending` 상태로 생성하고, 승인된 엽서만 전달 대상에 포함할 수 있게 설계한다.
 - 웹앱 작성 흐름
   - 엽서 작성 화면에서 사진 1장을 선택한다.
@@ -32,7 +32,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 웹앱 조회 흐름
   - 오늘의 엽서에 이미지 path가 있으면 signed URL을 생성해 표시한다.
   - 이미지가 없는 엽서는 기존 텍스트 화면을 유지한다.
-  - 수신자 화면에는 작성자 계정, 이메일, 소셜 프로필, `author_user_id`를 노출하지 않는다.
+  - 수신자 화면에는 작성자 계정, 이메일, 소셜 프로필, `author_id`를 노출하지 않는다.
 - 문서
   - `/docs/ddl.sql`에 Supabase Postgres 스키마와 필요한 RLS 정책 방향을 반영한다.
   - `/docs/api.md` 또는 Supabase 데이터 흐름 문서에 Storage 업로드, 엽서 작성, 오늘의 엽서 조회 흐름을 반영한다.
@@ -59,16 +59,19 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 조회 시 `image.url`은 Supabase Storage signed URL로 생성한다.
 - DB에는 공개 URL이 아니라 `image_path`를 저장한다.
 - MVP에서는 별도 `media_files` 테이블을 만들지 않고 `postcards`에 이미지 nullable 컬럼을 둔다.
-- 엽서 row에는 작성자 식별을 위한 `author_user_id`를 둔다.
+- 엽서 row에는 작성자 식별을 위한 `author_id`를 둔다.
 - 새 엽서는 기본적으로 `pending` 상태로 생성하고, `approved` 상태만 랜덤 전달 대상에 포함한다.
 - 엽서당 이미지는 1장만 허용한다.
 - 업로드 가능한 최대 byte size는 MVP에서 10MB로 제한한다.
 - 허용 이미지 content type은 `image/jpeg`, `image/png`, `image/webp`로 제한한다.
-- Storage path는 사용자 식별자와 UUID를 포함해 충돌과 추적 정리를 피할 수 있게 만든다.
-- 사용자는 `author_user_id = auth.uid()`인 엽서만 직접 생성할 수 있다.
+- Storage path는 `postcards/{auth.uid()}/{uuid}.{ext}` 형식으로 만들어 충돌과 추적 정리를 피할 수 있게 한다.
+- MVP 인증은 Supabase 익명 로그인을 우선 사용한다.
+- 작성/수신 기록과 signed URL 권한 확인을 위해 최소 수신 기록 테이블을 MVP에 포함한다.
+- 사용자는 `author_id = auth.uid()`인 엽서만 직접 생성할 수 있다.
 - 클라이언트는 엽서를 직접 `approved` 상태로 생성하거나 변경할 수 없다.
 - 사용자는 `postcards/{auth.uid()}/...` 경로에만 이미지를 업로드할 수 있다.
-- signed URL은 작성자 본인, 해당 엽서를 배정받은 수신자, 관리자만 받을 수 있게 제한한다.
+- signed URL은 권한 확인 RPC 또는 API 경유를 기본 방향으로 두고, 작성자 본인, 해당 엽서를 배정받은 수신자, 관리자만 받을 수 있게 제한한다.
+- 고아 파일 정기 정리는 MVP 이후 인증/관리자 확장 계획에서 구현하고, MVP에서는 DB insert 실패 시 즉시 cleanup만 시도한다.
 
 ## 작업
 
@@ -89,7 +92,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 ## 구현 순서
 
-1. Supabase 스키마와 Storage 정책을 먼저 확정한다 - 검증: `postcards` 이미지 컬럼, `author_user_id`, `status`, private bucket, path 규칙, RLS/Storage policy 초안이 문서화된다.
+1. Supabase 스키마와 Storage 정책을 먼저 확정한다 - 검증: `postcards` 이미지 컬럼, `author_id`, `status`, private bucket, path 규칙, RLS/Storage policy 초안이 문서화된다.
 2. 웹 엽서 작성 화면에 사진 선택과 파일 검증을 추가한다 - 검증: 선택, 미리보기, 선택 취소, 타입/크기 거부가 브라우저에서 동작한다.
 3. Supabase Storage 업로드와 엽서 row 생성을 연결한다 - 검증: 작성 버튼 클릭으로 Storage 업로드 후 DB insert가 순서대로 성공한다.
 4. 실패 처리와 cleanup을 추가한다 - 검증: Storage 업로드 후 DB insert 실패 시 업로드 object 삭제가 시도되고 사용자에게 실패 메시지가 표시된다.
@@ -108,13 +111,9 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 ## 미정 질문
 
-- Supabase Auth는 익명 로그인을 사용할지, 이메일 매직 링크를 사용할지 결정해야 한다.
 - signed URL 만료 시간을 결정해야 한다. MVP에서는 1시간을 우선 후보로 둔다.
-- Storage path의 사용자 식별자에 Supabase `auth.uid()`를 그대로 사용할지, 앱 내부 익명 사용자 ID를 사용할지 결정해야 한다.
 - 이미지 없는 오늘의 엽서 응답 또는 view model에서 `image`를 생략할지 `null`로 둘지 결정해야 한다.
-- Storage 업로드 성공 후 DB insert 실패로 남은 고아 파일을 정기적으로 정리할 방법을 결정해야 한다.
-- 수신 기록 테이블을 사진 업로드 MVP에서 함께 둘지, 오늘의 엽서 조회 구현 시점으로 미룰지 결정해야 한다.
-- signed URL 생성을 Supabase 클라이언트 SDK에서 직접 처리할지, 권한 확인용 RPC 또는 API 경유로 제한할지 결정해야 한다.
+- 이메일 매직 링크 또는 자체 이메일 로그인은 `plan/26-05-16/auth_history_reports_admin.md`에서 후속 구현한다.
 
 ## 추가 구현 고민사항
 
@@ -123,13 +122,13 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 10MB 제한은 UI 선택 직후와 업로드 직전 모두에서 같은 상수로 검증한다.
 - Supabase Storage upload에는 일반 DB insert와 다른 오류가 발생할 수 있으므로 실패 메시지를 업로드 실패와 엽서 저장 실패로 구분한다.
 - Storage path는 원본 파일명을 그대로 쓰지 않고 UUID와 안전한 확장자를 사용한다.
-- DB insert 실패 후 cleanup 삭제가 실패할 수 있으므로, path 생성 규칙과 생성 시각 기준으로 고아 파일을 추적할 수 있게 한다.
+- DB insert 실패 후 cleanup 삭제가 실패할 수 있으므로, path 생성 규칙과 생성 시각 기준으로 고아 파일을 추적할 수 있게 하되 정기 정리 구현은 인증/관리자 확장 계획으로 미룬다.
 - `image_content_type`과 `image_byte_size`는 클라이언트 검증값이므로 보안 검증의 유일한 근거로 보지 않는다.
 - RLS와 Storage policy는 MVP라도 누가 업로드하고 누가 조회할 수 있는지 명시해야 한다.
 - `postcards.status`는 DB 기본값을 `pending`으로 두고, 클라이언트 insert 값으로 `approved`를 받을 수 없게 한다.
 - 랜덤 전달 조회는 `status = 'approved'` 조건을 반드시 포함한다.
 - 수신자에게 전달되는 view model에는 작성자 식별 정보와 내부 storage path를 직접 노출하지 않는다.
-- 클라이언트가 임의의 `image_path`를 입력해 signed URL을 생성할 수 있는 흐름은 피한다.
+- 클라이언트가 임의의 `image_path`를 입력해 signed URL을 생성할 수 있는 흐름은 피하고, 오늘의 엽서 이미지는 권한 확인 RPC 또는 API 경유로 signed URL을 받는다.
 
 ## 완료 기준
 
@@ -146,7 +145,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 ## 다음 인계
 
-- 데이터/백엔드: `postcards` 이미지 컬럼, `author_user_id`, `status`, RLS, Storage bucket, Storage policy, signed URL 생성 방식을 확정한다.
+- 데이터/백엔드: `postcards` 이미지 컬럼, `author_id`, `status`, 최소 수신 기록, RLS, Storage bucket, Storage policy, signed URL 생성 방식을 확정한다.
 - 프론트엔드: 사진 선택, 미리보기, 파일 검증, Supabase Storage upload, DB insert, cleanup, 이미지 표시 UI를 구현한다.
 - 문서: Supabase schema, Storage bucket, private/signed URL 정책, 오류 케이스를 문서에 반영한다.
 - reviewer: 구현 후 RLS/policy, 고아 파일 처리, signed URL 만료 UX, 기존 텍스트 엽서 회귀를 검토한다.
