@@ -3,6 +3,7 @@
 -- 현재 적용 대상 마이그레이션:
 -- - supabase/migrations/202605130001_initial_web_mvp.sql
 -- - supabase/migrations/202605160001_postcard_image_storage_policy.sql
+-- - supabase/migrations/202605160002_postcard_approval_and_path_policy.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -24,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.postcards (
         image_byte_size IS NULL
         OR (image_byte_size > 0 AND image_byte_size <= 10485760)
     ),
-    status TEXT NOT NULL DEFAULT 'deliverable' CHECK (status IN ('deliverable', 'hidden')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'hidden')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -64,7 +65,10 @@ CREATE POLICY "profiles can read own row"
 
 CREATE POLICY "users can create own postcards"
     ON public.postcards FOR INSERT
-    WITH CHECK (auth.uid() = author_id);
+    WITH CHECK (
+        auth.uid() = author_id
+        AND status = 'pending'
+    );
 
 CREATE POLICY "users can read own postcards"
     ON public.postcards FOR SELECT
@@ -99,7 +103,8 @@ CREATE POLICY "users can upload own postcard images"
     ON storage.objects FOR INSERT
     WITH CHECK (
         bucket_id = 'postcard-images'
-        AND auth.uid()::text = (storage.foldername(name))[1]
+        AND (storage.foldername(name))[1] = 'postcards'
+        AND auth.uid()::text = (storage.foldername(name))[2]
     );
 
 CREATE POLICY "users can read related postcard images"
@@ -108,7 +113,10 @@ CREATE POLICY "users can read related postcard images"
         bucket_id = 'postcard-images'
         AND auth.uid() IS NOT NULL
         AND (
-            auth.uid()::text = (storage.foldername(name))[1]
+            (
+                (storage.foldername(name))[1] = 'postcards'
+                AND auth.uid()::text = (storage.foldername(name))[2]
+            )
             OR EXISTS (
                 SELECT 1
                   FROM public.postcards p
@@ -130,7 +138,8 @@ CREATE POLICY "users can delete own postcard images"
     ON storage.objects FOR DELETE
     USING (
         bucket_id = 'postcard-images'
-        AND auth.uid()::text = (storage.foldername(name))[1]
+        AND (storage.foldername(name))[1] = 'postcards'
+        AND auth.uid()::text = (storage.foldername(name))[2]
     );
 
 CREATE OR REPLACE FUNCTION public.ensure_profile()
@@ -192,7 +201,7 @@ BEGIN
         SELECT *
           INTO selected_postcard
           FROM public.postcards
-         WHERE status = 'deliverable'
+         WHERE status = 'approved'
            AND author_id <> current_user_id
            AND NOT EXISTS (
              SELECT 1
