@@ -7,9 +7,17 @@
 - 데이터, 인증, 이미지 저장은 Supabase를 우선 사용한다.
 - 웹앱은 PWA로 설치 가능한 형태를 목표로 한다.
 - Android, iOS, Spring Boot, AWS EC2 배포는 초기 MVP 이후 확장 후보로 보류한다.
-- 익명 또는 최소 인증 기반으로 엽서 작성, 사진 업로드, 랜덤 전달, 오늘의 엽서 수신 흐름을 먼저 검증한다.
+- 익명 로그인 기반으로 엽서 작성, 사진 업로드, 랜덤 전달, 오늘의 엽서 수신 흐름을 먼저 검증한다.
 - 엽서 수신자는 발신자를 알 수 없는 익명성을 유지하되, 로그인 사용자는 본인이 작성한 엽서와 받은 엽서 기록을 조회할 수 있게 확장한다.
-- 사용자 신고와 관리자 승인 흐름을 도입해, 엽서는 기본적으로 관리자 승인 후 다른 사용자에게 전달되도록 한다.
+- 현재 스키마는 관리자 승인 기반 전달을 전제로 하며, 새 엽서는 `pending`으로 생성되고 `approved` 상태만 전달된다.
+
+## 현재 구현 상태
+
+- `frontend` 웹앱은 Supabase 익명 로그인, 사진 1장 선택/검증/미리보기, Storage 업로드, 엽서 row 생성, 오늘의 엽서 RPC 호출, signed URL 이미지 표시를 구현했다.
+- Supabase 마이그레이션은 `profiles`, `postcards`, `postcard_deliveries`, private `postcard-images` bucket, RLS/Storage policy, `assign_today_postcard()` RPC를 포함한다.
+- 사진 없는 텍스트 엽서와 사진 포함 엽서 모두 같은 `postcards` 테이블을 사용한다.
+- 관리자 승인 상태는 DB/RLS/RPC에 반영되어 있지만, 관리자 화면과 승인/반려 조작 UI는 아직 없다.
+- 작성/수신 기록 목록, 신고, 차단, 반응, 고아 파일 정기 정리는 아직 후속 범위다.
 
 ## 목표 아키텍처
 
@@ -23,10 +31,7 @@ React + Vite + PWA 웹앱
 
 ## 남은 플랫폼 계획
 
-- Supabase Auth 익명 로그인 또는 최소 로그인 방식을 결정한다.
 - 자체 로그인과 소셜 로그인(카카오, 구글) 도입 순서와 Supabase Auth 연동 방식을 결정한다.
-- Supabase Postgres 스키마와 RLS 정책을 MVP 흐름에 맞게 정리한다.
-- Supabase Storage 버킷과 업로드/조회 정책을 정리한다.
 - 작성/수신 기록, 신고, 관리자 승인 상태를 포함하는 데이터 모델을 정리한다.
 - 관리자 페이지 접근 권한, 승인/반려/숨김/신고 처리 정책을 정리한다.
 - Cloudflare Pages 빌드/환경 변수 설정을 정리한다.
@@ -39,7 +44,7 @@ React + Vite + PWA 웹앱
 - 사진 업로드.
 - 랜덤 엽서 전달.
 - 오늘의 엽서 수신.
-- 엽서 저장.
+- 별도 엽서 보관/북마크.
 - 로그인 사용자의 작성한 엽서 기록.
 - 로그인 사용자의 받은 엽서 기록.
 - 신고.
@@ -61,16 +66,15 @@ React + Vite + PWA 웹앱
 
 ## 직후 구현 단위
 
-- React + Vite 웹앱과 Supabase 기반 초기 MVP로 마이그레이션한다.
-- 범위는 Vite 웹앱 스캐폴드, PWA 기본 파일, Supabase 클라이언트 연결, Supabase SQL 마이그레이션, Cloudflare Pages 배포 설정이다.
-- 제외 범위는 운영 도메인 연결, 고급 인증, 관리자 검수, 푸시 알림, Android/iOS 앱 유지보수다.
-- 완료 기준은 웹앱이 빌드되고, Supabase 마이그레이션 SQL로 엽서 작성/사진 저장/오늘의 엽서 수신 데이터 흐름을 구성할 수 있는 것이다.
-- 세부 사진 업로드 계획은 `plan/26-05-16/postcard_photo_upload.md`에서 관리한다.
+- React + Vite 웹앱과 Supabase 기반 사진 업로드 MVP는 구현되어 있다.
+- 세부 구현 완료 상태는 `plan/26-05-16/postcard_photo_upload.md`에서 관리한다.
+- 다음 구현 단위는 인증 고도화, 작성/수신 기록, 신고, 관리자 승인 화면이다.
+- 세부 후속 계획은 `plan/26-05-16/auth_history_reports_admin.md`에서 관리한다.
 
 ## 다음 계획 작업
 
 - Supabase 프로젝트에 SQL 마이그레이션을 적용한다.
 - Cloudflare Pages 프로젝트에 `frontend` 앱을 연결하고 환경 변수를 등록한다.
-- 웹앱에서 사진 포함 엽서 작성, 오늘의 엽서 받기, 다시 보기 흐름을 검증한다.
-- 첫 웹 MVP 완료 후 저장/반응, 검수, 인증 고도화 순서로 확장한다.
-- 인증, 기록, 신고, 관리자 승인/관리자 페이지 세부 계획은 `plan/26-05-16/auth_history_reports_admin.md`에서 관리한다.
+- 운영 데이터에서 관리자 승인할 테스트 엽서를 준비하고 오늘의 엽서 받기 흐름을 검증한다.
+- 관리자 승인 UI가 없으므로 MVP 검증 중에는 SQL 또는 Supabase Studio로 `postcards.status`를 `approved`로 변경해야 한다.
+- 첫 웹 MVP 검증 후 기록, 신고, 관리자 페이지, 인증 고도화 순서로 확장한다.
