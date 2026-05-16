@@ -1,5 +1,8 @@
 -- MoonLiter의 현재 우선 구현 경로는 웹/Supabase MVP다.
 -- 최신 PostgreSQL/Supabase 목표 스키마는 docs/PostgreSQL.sql을 기준으로 한다.
--- 실제 적용 마이그레이션은 supabase/migrations/202605130001_initial_web_mvp.sql에서 관리한다.
+-- 실제 적용 마이그레이션은 supabase/migrations/ 아래에서 관리한다.
+-- 현재 웹/Supabase MVP 기준:
+-- - 202605130001_initial_web_mvp.sql
+-- - 202605160001_postcard_image_storage_policy.sql
 --
 -- Android/Spring Boot + MySQL 기반 DDL은 향후 구현 경로로 보류한다.

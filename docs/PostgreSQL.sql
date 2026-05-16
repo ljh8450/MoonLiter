@@ -1,6 +1,8 @@
 -- MoonLiter 웹/Supabase MVP 기준 PostgreSQL 스키마.
 -- Supabase SQL Editor 또는 Supabase CLI 마이그레이션에 적용할 수 있는 형태로 기록한다.
--- 현재 적용 대상 마이그레이션: supabase/migrations/202605130001_initial_web_mvp.sql
+-- 현재 적용 대상 마이그레이션:
+-- - supabase/migrations/202605130001_initial_web_mvp.sql
+-- - supabase/migrations/202605160001_postcard_image_storage_policy.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -14,6 +16,14 @@ CREATE TABLE IF NOT EXISTS public.postcards (
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL CHECK (char_length(trim(content)) BETWEEN 1 AND 500),
     image_path TEXT,
+    image_content_type TEXT CHECK (
+        image_content_type IS NULL
+        OR image_content_type IN ('image/jpeg', 'image/png', 'image/webp')
+    ),
+    image_byte_size BIGINT CHECK (
+        image_byte_size IS NULL
+        OR (image_byte_size > 0 AND image_byte_size <= 10485760)
+    ),
     status TEXT NOT NULL DEFAULT 'deliverable' CHECK (status IN ('deliverable', 'hidden')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -32,6 +42,10 @@ CREATE INDEX IF NOT EXISTS idx_postcards_author_id
 
 CREATE INDEX IF NOT EXISTS idx_postcards_status
     ON public.postcards(status);
+
+CREATE INDEX IF NOT EXISTS idx_postcards_image_path
+    ON public.postcards(image_path)
+    WHERE image_path IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_postcard_deliveries_receiver_date
     ON public.postcard_deliveries(receiver_id, delivered_date);
@@ -56,6 +70,17 @@ CREATE POLICY "users can read own postcards"
     ON public.postcards FOR SELECT
     USING (auth.uid() = author_id);
 
+CREATE POLICY "users can read delivered postcards"
+    ON public.postcards FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1
+              FROM public.postcard_deliveries d
+             WHERE d.postcard_id = public.postcards.id
+               AND d.receiver_id = auth.uid()
+        )
+    );
+
 CREATE POLICY "users can read own deliveries"
     ON public.postcard_deliveries FOR SELECT
     USING (auth.uid() = receiver_id);
@@ -64,6 +89,12 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('postcard-images', 'postcard-images', false)
 ON CONFLICT (id) DO NOTHING;
 
+UPDATE storage.buckets
+   SET public = false,
+       file_size_limit = 10485760,
+       allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp']
+ WHERE id = 'postcard-images';
+
 CREATE POLICY "users can upload own postcard images"
     ON storage.objects FOR INSERT
     WITH CHECK (
@@ -71,11 +102,35 @@ CREATE POLICY "users can upload own postcard images"
         AND auth.uid()::text = (storage.foldername(name))[1]
     );
 
-CREATE POLICY "authenticated users can read postcard images"
+CREATE POLICY "users can read related postcard images"
     ON storage.objects FOR SELECT
     USING (
         bucket_id = 'postcard-images'
-        AND auth.role() = 'authenticated'
+        AND auth.uid() IS NOT NULL
+        AND (
+            auth.uid()::text = (storage.foldername(name))[1]
+            OR EXISTS (
+                SELECT 1
+                  FROM public.postcards p
+                 WHERE p.image_path = storage.objects.name
+                   AND p.author_id = auth.uid()
+            )
+            OR EXISTS (
+                SELECT 1
+                  FROM public.postcards p
+                  JOIN public.postcard_deliveries d
+                    ON d.postcard_id = p.id
+                 WHERE p.image_path = storage.objects.name
+                   AND d.receiver_id = auth.uid()
+            )
+        )
+    );
+
+CREATE POLICY "users can delete own postcard images"
+    ON storage.objects FOR DELETE
+    USING (
+        bucket_id = 'postcard-images'
+        AND auth.uid()::text = (storage.foldername(name))[1]
     );
 
 CREATE OR REPLACE FUNCTION public.ensure_profile()
@@ -103,6 +158,8 @@ RETURNS TABLE (
     postcard_id UUID,
     content TEXT,
     image_path TEXT,
+    image_content_type TEXT,
+    image_byte_size BIGINT,
     delivered_date DATE,
     delivered_at TIMESTAMPTZ
 )
@@ -126,9 +183,9 @@ BEGIN
 
     SELECT *
       INTO existing_delivery
-      FROM public.postcard_deliveries
-     WHERE receiver_id = current_user_id
-       AND delivered_date = today
+      FROM public.postcard_deliveries d
+     WHERE d.receiver_id = current_user_id
+       AND d.delivered_date = today
      LIMIT 1;
 
     IF existing_delivery.id IS NULL THEN
@@ -161,6 +218,8 @@ BEGIN
         p.id,
         p.content,
         p.image_path,
+        p.image_content_type,
+        p.image_byte_size,
         existing_delivery.delivered_date,
         existing_delivery.created_at
       FROM public.postcards p

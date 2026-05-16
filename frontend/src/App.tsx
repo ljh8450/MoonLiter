@@ -7,6 +7,8 @@ type TodayPostcard = {
   postcard_id: string
   content: string
   image_path: string | null
+  image_content_type: string | null
+  image_byte_size: number | null
   delivered_date: string
   delivered_at: string
 }
@@ -18,6 +20,16 @@ type RequestState =
   | { type: 'error'; message: string }
 
 const emptyState: RequestState = { type: 'idle' }
+const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'] as const
+const imageAccept = allowedImageTypes.join(',')
+const maxImageByteSize = 10 * 1024 * 1024
+const signedUrlExpiresInSeconds = 60 * 60
+
+type UploadedImage = {
+  path: string
+  contentType: string
+  byteSize: number
+}
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -64,23 +76,67 @@ export function App() {
     setState(error ? { type: 'error', message: error.message } : emptyState)
   }
 
-  async function uploadImage(): Promise<string | null> {
+  function validateImageFile(file: File): string | null {
+    if (!allowedImageTypes.includes(file.type as (typeof allowedImageTypes)[number])) {
+      return 'JPEG, PNG, WebP 사진만 보낼 수 있습니다.'
+    }
+
+    if (file.size > maxImageByteSize) {
+      return '사진은 10MB 이하만 보낼 수 있습니다.'
+    }
+
+    return null
+  }
+
+  function getImageExtension(contentType: string) {
+    if (contentType === 'image/png') return 'png'
+    if (contentType === 'image/webp') return 'webp'
+    return 'jpg'
+  }
+
+  function handleImageChange(file: File | null) {
+    if (!file) {
+      setImageFile(null)
+      return
+    }
+
+    const validationMessage = validateImageFile(file)
+    if (validationMessage) {
+      setImageFile(null)
+      setState({ type: 'error', message: validationMessage })
+      return
+    }
+
+    setImageFile(file)
+    setState(emptyState)
+  }
+
+  async function uploadImage(): Promise<UploadedImage | null> {
     if (!supabase || !user || !imageFile) {
       return null
     }
 
-    const extension = imageFile.name.split('.').pop() || 'jpg'
+    const validationMessage = validateImageFile(imageFile)
+    if (validationMessage) {
+      throw new Error(validationMessage)
+    }
+
+    const extension = getImageExtension(imageFile.type)
     const path = `${user.id}/${crypto.randomUUID()}.${extension}`
     const { error } = await supabase.storage.from('postcard-images').upload(path, imageFile, {
-      contentType: imageFile.type || 'image/jpeg',
+      contentType: imageFile.type,
       upsert: false,
     })
 
     if (error) {
-      throw error
+      throw new Error(`사진 업로드에 실패했습니다. ${error.message}`)
     }
 
-    return path
+    return {
+      path,
+      contentType: imageFile.type,
+      byteSize: imageFile.size,
+    }
   }
 
   async function writePostcard() {
@@ -90,15 +146,24 @@ export function App() {
 
     setState({ type: 'loading', message: '엽서를 우체통에 넣는 중입니다.' })
 
+    let uploadedImage: UploadedImage | null = null
+
     try {
-      const imagePath = await uploadImage()
+      uploadedImage = await uploadImage()
       const { error } = await supabase.from('postcards').insert({
         author_id: user.id,
         content: content.trim(),
-        image_path: imagePath,
+        image_path: uploadedImage?.path ?? null,
+        image_content_type: uploadedImage?.contentType ?? null,
+        image_byte_size: uploadedImage?.byteSize ?? null,
       })
 
-      if (error) throw error
+      if (error) {
+        if (uploadedImage) {
+          await supabase.storage.from('postcard-images').remove([uploadedImage.path])
+        }
+        throw new Error(`엽서 저장에 실패했습니다. ${error.message}`)
+      }
 
       setContent('')
       setImageFile(null)
@@ -142,7 +207,7 @@ export function App() {
 
     const { data, error } = await supabase.storage
       .from('postcard-images')
-      .createSignedUrl(path, 60 * 10)
+      .createSignedUrl(path, signedUrlExpiresInSeconds)
 
     if (error) throw error
     setTodayImageUrl(data.signedUrl)
@@ -177,10 +242,14 @@ export function App() {
               사진
               <input
                 type="file"
-                accept="image/*"
-                onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+                accept={imageAccept}
+                onChange={(event) => {
+                  handleImageChange(event.target.files?.[0] ?? null)
+                  event.currentTarget.value = ''
+                }}
               />
             </label>
+            <p className="field-note">JPEG, PNG, WebP 사진 1장만 보낼 수 있습니다. 최대 10MB.</p>
             {imagePreviewUrl && <img className="preview" src={imagePreviewUrl} alt="선택한 사진 미리보기" />}
             <label>
               문장

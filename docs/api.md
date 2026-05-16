@@ -46,7 +46,7 @@ await supabase.auth.signInAnonymously()
 await supabase.storage
   .from('postcard-images')
   .upload(`${user.id}/${crypto.randomUUID()}.${extension}`, file, {
-    contentType: file.type || 'image/jpeg',
+    contentType: file.type,
     upsert: false,
   })
 ```
@@ -61,7 +61,10 @@ await supabase.storage
 
 - 사용자는 자기 사용자 ID 폴더 아래에만 업로드할 수 있다.
 - 버킷은 private이다.
-- MVP 클라이언트는 `image/*` 파일 선택을 허용한다.
+- MVP 클라이언트는 `image/jpeg`, `image/png`, `image/webp`만 허용한다.
+- 선택한 파일은 10MB 이하여야 한다.
+- 파일 선택 직후와 업로드 직전에 같은 검증을 수행한다.
+- Storage bucket도 10MB와 허용 MIME type을 제한한다.
 - 이미지 리사이징, 썸네일 생성, EXIF 제거는 현재 범위가 아니다.
 
 ## 엽서 작성
@@ -72,7 +75,9 @@ await supabase.storage
 await supabase.from('postcards').insert({
   author_id: user.id,
   content: content.trim(),
-  image_path: imagePath,
+  image_path: uploadedImage?.path ?? null,
+  image_content_type: uploadedImage?.contentType ?? null,
+  image_byte_size: uploadedImage?.byteSize ?? null,
 })
 ```
 
@@ -82,6 +87,8 @@ await supabase.from('postcards').insert({
 author_id: 현재 Supabase 사용자 ID
 content: 1자 이상 500자 이하 문장
 image_path: Storage object path, 사진이 없으면 null
+image_content_type: image/jpeg, image/png, image/webp 중 하나, 사진이 없으면 null
+image_byte_size: 1 이상 10MB 이하 byte 크기, 사진이 없으면 null
 status: 기본값 deliverable
 ```
 
@@ -90,6 +97,8 @@ status: 기본값 deliverable
 - `author_id`는 현재 로그인 사용자와 같아야 한다.
 - `content`는 공백 제거 후 1자 이상 500자 이하여야 한다.
 - `image_path`에는 공개 URL이 아니라 Storage object path를 저장한다.
+- `image_content_type`과 `image_byte_size`는 클라이언트 검증값이며, DB check constraint와 Storage bucket 제한으로 한 번 더 제한한다.
+- Storage 업로드 성공 후 엽서 저장이 실패하면 클라이언트는 방금 업로드한 object 삭제를 시도한다.
 
 ## 오늘의 엽서 받기
 
@@ -107,6 +116,8 @@ const { data, error } = await supabase.rpc('assign_today_postcard')
   "postcard_id": "51c8332d-fbaa-4fef-91f1-5f2ff8c8ad91",
   "content": "오늘 밤 공기가 조금 시원하네요.",
   "image_path": "a73f.../f71d....jpg",
+  "image_content_type": "image/jpeg",
+  "image_byte_size": 3481920,
   "delivered_date": "2026-05-15",
   "delivered_at": "2026-05-15T12:30:00Z"
 }
@@ -126,14 +137,15 @@ RPC 응답의 `image_path`가 있으면 signed URL을 생성해 표시한다.
 ```ts
 await supabase.storage
   .from('postcard-images')
-  .createSignedUrl(imagePath, 60 * 10)
+  .createSignedUrl(imagePath, 60 * 60)
 ```
 
 ### 동작 규칙
 
 - DB에는 signed URL을 저장하지 않는다.
-- 화면 표시 시점에 `image_path`로 10분짜리 signed URL을 생성한다.
+- 화면 표시 시점에 `image_path`로 1시간짜리 signed URL을 생성한다.
 - `image_path`가 없으면 문장만 표시한다.
+- Storage object는 작성자 또는 오늘의 엽서로 배정받은 수신자만 읽을 수 있다.
 
 ## 주요 오류 상황
 
