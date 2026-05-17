@@ -12,7 +12,7 @@ alter table public.postcards
         and image_content_type is not null
         and image_byte_size is not null
       )
-    );
+    ) not valid;
 
 drop policy if exists "users can create own postcards"
   on public.postcards;
