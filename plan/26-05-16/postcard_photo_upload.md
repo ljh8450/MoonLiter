@@ -15,6 +15,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 새 엽서는 `pending`으로 생성되고, `assign_today_postcard()`는 `approved` 엽서만 배정한다.
 - 오늘의 엽서 화면은 RPC 응답의 `image_path`로 1시간짜리 signed URL을 생성해 이미지를 표시한다.
 - 관리자 승인 UI가 구현되어 있어 실제 수신 테스트 전 `/admin` 화면에서 `approved` 상태로 변경할 수 있다.
+- 이 MVP 구현 계획의 프론트엔드/데이터 작업은 완료되었고, 남은 항목은 reviewer 점검이다.
 
 ## 맥락
 
@@ -75,7 +76,7 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 업로드 가능한 최대 byte size는 MVP에서 10MB로 제한한다.
 - 허용 이미지 content type은 `image/jpeg`, `image/png`, `image/webp`로 제한한다.
 - Storage path는 `postcards/{auth.uid()}/{uuid}.{ext}` 형식으로 만들어 충돌과 추적 정리를 피할 수 있게 한다.
-- MVP 인증은 Supabase 소셜/이메일 로그인을 사용하며, 익명 작성 기능은 제공하지 않는다.
+- MVP 인증은 Supabase 소셜/이메일 로그인을 사용하며, 비로그인 익명 작성 기능은 제공하지 않는다.
 - 작성/수신 기록과 signed URL 권한 확인을 위해 최소 수신 기록 테이블을 MVP에 포함한다.
 - 사용자는 `author_id = auth.uid()`인 엽서만 직접 생성할 수 있다.
 - 클라이언트는 엽서를 직접 `approved` 상태로 생성하거나 변경할 수 없다.
@@ -86,29 +87,12 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 ## 작업
 
-- [x] 기획/문서 담당: 웹/Supabase 사진 업로드 데이터 흐름을 확정한다 - 검증: Android/Spring Boot 경로와 웹/Supabase 경로가 문서에서 분리되어 혼동되지 않는다.
-- [x] 백엔드/데이터 담당: Supabase Postgres 스키마를 확정한다 - 검증: `postcards`에 `image_path`, `image_content_type`, `image_byte_size` nullable 컬럼이 포함되고 이미지 없는 기존 엽서 row가 유지된다.
-- [x] 백엔드/데이터 담당: Supabase Storage bucket과 path 규칙을 확정한다 - 검증: `postcard-images` private bucket과 `postcards/{userId}/{uuid}.{ext}` 형식의 path 규칙이 문서화된다.
-- [x] 백엔드/데이터 담당: Supabase RLS와 Storage policy를 설계한다 - 검증: 사용자는 허용된 경로에만 업로드할 수 있고, 임의의 타인 파일을 직접 조회할 수 없다.
-- [x] 백엔드/데이터 담당: 엽서 승인 상태와 전달 조회 조건을 설계한다 - 검증: 새 엽서는 `pending`으로 생성되고 `approved` 상태만 랜덤 전달 대상에 포함된다.
-- [x] 백엔드/데이터 담당: signed URL 생성 권한을 설계한다 - 검증: 작성자 본인과 배정받은 수신자만 관련 이미지 object를 읽을 수 있다.
-- [x] 프론트엔드 담당: 엽서 작성 화면에 사진 선택 UI를 추가한다 - 검증: 이미지 1장을 선택하면 미리보기가 표시되고 선택 취소 또는 변경이 가능하다.
-- [x] 프론트엔드 담당: 선택한 파일의 content type과 byte size를 검증한다 - 검증: `image/jpeg`, `image/png`, `image/webp` 외 파일과 10MB 초과 파일은 업로드 전에 거부된다.
-- [x] 프론트엔드 담당: Supabase Storage 업로드 흐름을 구현한다 - 검증: 작성 버튼 클릭 시 파일이 private bucket에 업로드되고 storage path가 반환된다.
-- [x] 프론트엔드 담당: Storage 업로드 성공 후 엽서 row 생성을 연결한다 - 검증: 사진과 문장을 포함한 엽서 row에 `image_path`와 이미지 메타데이터가 저장된다.
-- [x] 프론트엔드 담당: DB insert 실패 시 Storage cleanup을 시도한다 - 검증: 업로드 성공 후 엽서 저장 실패 상황에서 방금 업로드한 object 삭제가 호출된다.
-- [x] 프론트엔드 담당: 오늘의 엽서 화면에 이미지 표시를 추가한다 - 검증: `image_path`가 있으면 signed URL로 사진과 문장이 함께 보이고, 이미지 없는 엽서는 기존 문장 화면이 유지된다.
-- [x] 문서 담당: `/docs/ddl.sql`과 API/데이터 흐름 문서를 최신화한다 - 검증: Supabase schema, RLS, Storage bucket, signed URL 생성, 오류 케이스가 문서에 포함된다.
 - [ ] reviewer 담당: 계획 대비 구현과 리스크를 리뷰한다 - 검증: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀가 심각도별로 정리된다.
 
 ## 구현 순서
 
-1. Supabase 스키마와 Storage 정책을 먼저 확정한다 - 상태: 완료.
-2. 웹 엽서 작성 화면에 사진 선택과 파일 검증을 추가한다 - 상태: 완료.
-3. Supabase Storage 업로드와 엽서 row 생성을 연결한다 - 상태: 완료.
-4. 실패 처리와 cleanup을 추가한다 - 상태: 완료.
-5. 오늘의 엽서 조회 화면에 signed URL 이미지 표시를 붙인다 - 상태: 완료.
-6. 문서와 리뷰를 완료한다 - 상태: 문서 최신화 완료, reviewer 검토는 미완료.
+1. reviewer 점검을 진행한다 - 검증: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀가 심각도별로 정리된다.
+2. reviewer 결과에서 구현 보완이 필요한 항목을 별도 계획으로 분리한다 - 검증: 보완 항목의 담당 역할과 검증 기준이 명확하다.
 
 ## 의존성
 
@@ -157,5 +141,4 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 ## 다음 인계
 
 - 운영/데이터: 실제 Supabase 프로젝트에 최신 마이그레이션을 적용하고 테스트용 엽서를 `approved` 상태로 준비한다.
-- 프론트엔드: 관리자 승인 UI가 생기기 전까지는 미승인 엽서만 작성되는 현재 UX를 명확히 안내한다.
 - reviewer: 구현 후 RLS/policy, 고아 파일 처리, signed URL 만료 UX, 기존 텍스트 엽서 회귀를 검토한다.
