@@ -20,7 +20,8 @@
 - 작성/수신 기록 목록, 신고, 사용자별 숨김/관심없음, 관리자 권한 관리, 사용자 정지는 구현되어 있다.
 - PWA 서비스 워커는 배포 후 이전 `index.html`을 재사용하지 않도록 내비게이션 요청을 네트워크 우선으로 처리한다.
 - Cloudflare Pages용 `_headers` 파일로 `index.html`, `sw.js`, manifest는 재검증하고 hashed assets는 장기 캐시하도록 정리했다.
-- 반응, 고아 파일 정기 정리는 아직 후속 범위다.
+- 고아 파일 정기 정리는 Supabase Edge Function과 운영 문서 기준으로 구현되어 있다.
+- 반응은 아직 후속 범위다.
 - 차단 기능, 계절 테마, 감성 태그는 현재 우선순위에서 제외한다.
 
 ## 목표 아키텍처
@@ -69,7 +70,7 @@ React + Vite + PWA 웹앱
 - React + Vite 웹앱과 Supabase 기반 사진 업로드 MVP는 구현되어 있다.
 - 인증 고도화, 작성/수신 기록, 신고, 관리자 승인 화면은 구현되어 있다.
 - 세부 구현 상태는 `plan/26-05-16/postcard_photo_upload.md`와 `plan/26-05-16/auth_history_reports_admin.md`에서 관리한다.
-- 다음 구현 단위는 운영 적용, 고아 파일 정기 정리, 반응 같은 후속 운영 기능, reviewer 점검이다.
+- 다음 구현 단위는 운영 적용, 반응 같은 후속 운영 기능, reviewer 점검이다.
 
 ## 다음 계획 작업
 
@@ -77,7 +78,7 @@ React + Vite + PWA 웹앱
 - Cloudflare Pages 프로젝트에 `frontend` 앱을 연결하고 환경 변수를 등록한다.
 - 운영 데이터에서 관리자 승인할 테스트 엽서를 준비하고 오늘의 엽서 받기 흐름을 검증한다.
 - 배포 후 기존 서비스 워커 캐시가 남은 브라우저는 1회 site data 삭제 또는 service worker unregister로 전환을 확인한다.
-- 고아 파일 정기 정리, 반응 같은 후속 운영 기능과 reviewer 점검을 진행한다.
+- 반응 같은 후속 운영 기능과 reviewer 점검을 진행한다.
 
 ## 현재 보류 항목
 

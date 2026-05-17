@@ -15,7 +15,8 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 - 새 엽서는 `pending`으로 생성되고, `assign_today_postcard()`는 `approved` 엽서만 배정한다.
 - 오늘의 엽서 화면은 RPC 응답의 `image_path`로 1시간짜리 signed URL을 생성해 이미지를 표시한다.
 - 관리자 승인 UI가 구현되어 있어 실제 수신 테스트 전 `/admin` 화면에서 `approved` 상태로 변경할 수 있다.
-- 이 MVP 구현 계획의 프론트엔드/데이터 작업은 완료되었고, 남은 항목은 reviewer 점검이다.
+- 이 MVP 구현 계획의 프론트엔드/데이터 작업과 reviewer 점검은 완료되었다.
+- reviewer 점검에서 확인된 `image_path` 소유권 검증, 신고 상세 이미지 표시, 표시 불가 delivery 안내는 보완되었다.
 
 ## 맥락
 
@@ -87,12 +88,12 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 ## 작업
 
-- [ ] reviewer 담당: 계획 대비 구현과 리스크를 리뷰한다 - 검증: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀가 심각도별로 정리된다.
+- [x] reviewer 담당: 계획 대비 구현과 리스크를 리뷰한다 - 검증: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀가 심각도별로 정리된다. 완료: `image_path` 소유권 검증, 신고 상세 이미지 표시, 표시 불가 delivery 안내를 보완했고 `npm run build`로 검증했다.
 
 ## 구현 순서
 
-1. reviewer 점검을 진행한다 - 검증: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀가 심각도별로 정리된다.
-2. reviewer 결과에서 구현 보완이 필요한 항목을 별도 계획으로 분리한다 - 검증: 보완 항목의 담당 역할과 검증 기준이 명확하다.
+1. reviewer 점검을 진행한다 - 완료: RLS, Storage policy, 고아 파일 처리, signed URL 만료, 기존 텍스트 엽서 회귀를 심각도별로 정리했다.
+2. reviewer 결과에서 구현 보완이 필요한 항목을 반영한다 - 완료: `image_path` 소유권 검증, 신고 상세 이미지 표시, 표시 불가 delivery 안내를 구현하고 문서를 갱신했다.
 
 ## 의존성
 
@@ -142,3 +143,4 @@ React + Vite 웹앱에서 사진 1장과 감성 문장을 함께 담아 엽서�
 
 - 운영/데이터: 실제 Supabase 프로젝트에 최신 마이그레이션을 적용하고 테스트용 엽서를 `approved` 상태로 준비한다.
 - reviewer: 구현 후 RLS/policy, 고아 파일 처리, signed URL 만료 UX, 기존 텍스트 엽서 회귀를 검토한다.
+- 완료 처리: reviewer 점검과 확인된 보완 구현은 완료되었다. 고아 파일 정기 정리는 `auth_history_reports_admin.md`에서 Edge Function과 운영 문서 기준으로 완료 처리되었다.

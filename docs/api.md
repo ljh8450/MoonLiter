@@ -11,7 +11,7 @@ Android/Spring Boot REST API는 향후 구현 후보이며, 현재 웹 MVP의 �
 - 오늘의 엽서 배정 RPC는 `approved` 상태 엽서만 반환한다.
 - 사진은 private Storage bucket에 저장하고, 화면 표시 시 클라이언트가 `image_path`로 1시간짜리 signed URL을 생성한다.
 - 작성 기록, 수신 기록 목록, 신고, 사용자별 관심없음/숨김, 관리자 페이지, 관리자 권한 관리, 사용자 정지는 구현되어 있다.
-- 고아 파일 정기 정리는 아직 구현되어 있지 않다.
+- 고아 파일 정기 정리는 Edge Function `cleanup-orphan-postcard-images`로 수행한다.
 
 ## 공통 규칙
 
@@ -45,6 +45,7 @@ VITE_SUPABASE_ANON_KEY=
 - RPC: `public.remove_admin_user(user_id)`
 - RPC: `public.suspend_user(user_id, reason)`
 - RPC: `public.unsuspend_user(user_id)`
+- Edge Function: `cleanup-orphan-postcard-images`
 
 ## 로그인
 
@@ -129,7 +130,7 @@ status: 기본값 pending
 - 이미지가 있으면 `image_path`, `image_content_type`, `image_byte_size`를 함께 저장하고, 이미지가 없으면 세 컬럼은 모두 `null`이어야 한다.
 - `image_content_type`과 `image_byte_size`는 클라이언트 검증값이며, DB check constraint와 Storage bucket 제한으로 한 번 더 제한한다.
 - Storage 업로드 성공 후 엽서 저장이 실패하면 클라이언트는 방금 업로드한 object 삭제를 시도한다.
-- DB insert 실패 후 즉시 삭제가 실패해 남은 고아 파일의 정기 정리는 후속 인증/관리자 확장 계획에서 구현한다.
+- DB insert 실패 후 즉시 삭제가 실패해 남은 고아 파일은 Edge Function 정리 대상으로 남긴다.
 
 ## 오늘의 엽서 받기
 
@@ -302,6 +303,26 @@ await supabase.rpc('unsuspend_user', {
 - 관리자는 올바르지 않은 사용자를 정지하거나 정지 해제할 수 있다.
 - 관리자 신고 목록은 신고된 엽서의 사진, 본문, 작성자 ID, 상태를 함께 확인할 수 있다.
 
+## 고아 파일 정리
+
+Storage 업로드 성공 후 DB insert 실패 cleanup이 실패하거나 작성 중 이탈로 남은 object는 Edge Function으로 정리한다.
+
+```bash
+curl -X POST \
+  "https://{project-ref}.functions.supabase.co/cleanup-orphan-postcard-images?dryRun=true&retentionHours=48" \
+  -H "Authorization: Bearer {SUPABASE_ANON_KEY 또는 SERVICE_ROLE_KEY}" \
+  -H "x-cleanup-secret: {CLEANUP_ORPHAN_POSTCARD_IMAGES_SECRET}"
+```
+
+동작 규칙:
+
+- 고아 파일은 새 엽서나 새 사용자에게 재연결하지 않는다.
+- 기본 보존 기간은 48시간이다.
+- `postcards/{userId}/...` 경로의 object만 정리 대상이다.
+- `public.postcards.image_path`에 연결되지 않은 object만 삭제 후보가 된다.
+- 운영 전에는 `dryRun=true`로 후보 목록을 먼저 확인한다.
+- 자세한 운영 절차는 `docs/operations.md`를 기준으로 한다.
+
 ## 주요 오류 상황
 
 - Supabase 환경 변수가 없으면 웹앱은 설정 필요 화면을 표시한다.
@@ -319,7 +340,6 @@ await supabase.rpc('unsuspend_user', {
 - presigned URL 기반 외부 오브젝트 스토리지 직접 업로드.
 - 별도 엽서 보관/북마크, 반응.
 - 감성 태그는 당장 구현하지 않는다. 엽서 작성은 문장과 사진 중심으로 유지하고, 태그 기반 분류나 추천은 장기 후보로 보류한다.
-- 고아 파일 정기 정리.
 - 차단 기능은 우선 구현하지 않는다. 신고, 개인 숨김, 관리자 숨김, 사용자 정지로 기본 관리 흐름을 대응한다.
 - 계절 테마는 MVP 우선순위에서 제외하고 장기 UI 확장 후보로 보류한다.
 - 푸시 알림.
