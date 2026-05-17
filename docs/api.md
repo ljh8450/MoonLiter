@@ -40,6 +40,7 @@ VITE_SUPABASE_ANON_KEY=
 - RPC: `public.hide_postcard(postcard_id, note)`
 - RPC: `public.resolve_postcard_report(report_id, next_status, should_hide_postcard, note)`
 - RPC: `public.list_admin_users()`
+- RPC: `public.list_suspended_users()`
 - RPC: `public.invite_admin_user(email)`
 - RPC: `public.remove_admin_user(user_id)`
 - RPC: `public.suspend_user(user_id, reason)`
@@ -124,6 +125,8 @@ status: 기본값 pending
 - 클라이언트는 `approved` 상태의 엽서를 직접 생성하거나 변경할 수 없다.
 - `content`는 공백 제거 후 1자 이상 500자 이하여야 한다.
 - `image_path`에는 공개 URL이 아니라 Storage object path를 저장한다.
+- `image_path`가 있으면 `postcards/{현재 사용자 ID}/...` 경로여야 한다.
+- 이미지가 있으면 `image_path`, `image_content_type`, `image_byte_size`를 함께 저장하고, 이미지가 없으면 세 컬럼은 모두 `null`이어야 한다.
 - `image_content_type`과 `image_byte_size`는 클라이언트 검증값이며, DB check constraint와 Storage bucket 제한으로 한 번 더 제한한다.
 - Storage 업로드 성공 후 엽서 저장이 실패하면 클라이언트는 방금 업로드한 object 삭제를 시도한다.
 - DB insert 실패 후 즉시 삭제가 실패해 남은 고아 파일의 정기 정리는 후속 인증/관리자 확장 계획에서 구현한다.
@@ -266,6 +269,8 @@ await supabase.rpc('resolve_postcard_report', {
 ```ts
 await supabase.rpc('list_admin_users')
 
+await supabase.rpc('list_suspended_users')
+
 await supabase.rpc('invite_admin_user', {
   target_email: 'admin@example.com',
 })
@@ -295,6 +300,7 @@ await supabase.rpc('unsuspend_user', {
 - 관리자는 자기 자신의 관리자 권한을 회수할 수 없다.
 - 마지막 관리자 권한은 회수할 수 없다.
 - 관리자는 올바르지 않은 사용자를 정지하거나 정지 해제할 수 있다.
+- 관리자 신고 목록은 신고된 엽서의 사진, 본문, 작성자 ID, 상태를 함께 확인할 수 있다.
 
 ## 주요 오류 상황
 

@@ -62,6 +62,7 @@ type AdminReport = {
     id: string
     author_id: string
     content: string
+    image_path: string | null
     status: string
   } | null
 }
@@ -70,6 +71,13 @@ type AdminUser = {
   user_id: string
   email: string | null
   created_at: string
+}
+
+type SuspendedUser = {
+  user_id: string
+  email: string | null
+  suspended_at: string
+  suspension_reason: string | null
 }
 
 type RequestState =
@@ -107,8 +115,10 @@ export function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [pendingPostcards, setPendingPostcards] = useState<AdminPostcard[]>([])
   const [adminImageUrls, setAdminImageUrls] = useState<Record<string, string>>({})
+  const [reportImageUrls, setReportImageUrls] = useState<Record<string, string>>({})
   const [reports, setReports] = useState<AdminReport[]>([])
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
+  const [suspendedUsers, setSuspendedUsers] = useState<SuspendedUser[]>([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [adminInviteEmail, setAdminInviteEmail] = useState('')
@@ -163,8 +173,10 @@ export function App() {
       setIsAdmin(false)
       setPendingPostcards([])
       setAdminImageUrls({})
+      setReportImageUrls({})
       setReports([])
       setAdminUsers([])
+      setSuspendedUsers([])
       return
     }
 
@@ -381,6 +393,14 @@ export function App() {
       if (error) throw error
 
       const postcard = Array.isArray(data) ? data[0] : data
+      if (!postcard) {
+        setToday(null)
+        setTodayImageUrl(null)
+        setState({ type: 'error', message: '이 엽서는 더 이상 열 수 없습니다.' })
+        await refreshHistory()
+        return
+      }
+
       setToday(postcard)
       await loadSignedImageUrl(postcard?.image_path ?? null)
       await refreshHistory()
@@ -450,13 +470,15 @@ export function App() {
       setIsAdmin(false)
       setPendingPostcards([])
       setAdminImageUrls({})
+      setReportImageUrls({})
       setReports([])
       setAdminUsers([])
+      setSuspendedUsers([])
       return
     }
 
     setIsAdmin(true)
-    const [pendingResult, reportsResult, adminUsersResult] = await Promise.all([
+    const [pendingResult, reportsResult, adminUsersResult, suspendedUsersResult] = await Promise.all([
       supabase
         .from('postcards')
         .select('id, content, image_path, status, created_at, moderated_at, moderation_note')
@@ -464,21 +486,33 @@ export function App() {
         .order('created_at', { ascending: true }),
       supabase
         .from('postcard_reports')
-        .select('id, postcard_id, delivery_id, reason, status, created_at, handler_note, postcard:postcards(id, author_id, content, status)')
+        .select('id, postcard_id, delivery_id, reason, status, created_at, handler_note, postcard:postcards(id, author_id, content, image_path, status)')
         .eq('status', 'open')
         .order('created_at', { ascending: true }),
       supabase.rpc('list_admin_users'),
+      supabase.rpc('list_suspended_users'),
     ])
 
     if (pendingResult.error) throw pendingResult.error
     if (reportsResult.error) throw reportsResult.error
     if (adminUsersResult.error) throw adminUsersResult.error
+    if (suspendedUsersResult.error) throw suspendedUsersResult.error
 
     const pending = (pendingResult.data ?? []) as AdminPostcard[]
+    const openReports = (reportsResult.data ?? []) as unknown as AdminReport[]
     setPendingPostcards(pending)
     setAdminImageUrls(await loadImageUrlsByPostcardId(pending))
-    setReports((reportsResult.data ?? []) as unknown as AdminReport[])
+    setReports(openReports)
+    setReportImageUrls(
+      await loadImageUrlsByPostcardId(
+        openReports.map((report) => ({
+          id: report.id,
+          image_path: report.postcard?.image_path ?? null,
+        })),
+      ),
+    )
     setAdminUsers((adminUsersResult.data ?? []) as AdminUser[])
+    setSuspendedUsers((suspendedUsersResult.data ?? []) as SuspendedUser[])
   }
 
   async function loadImageUrlsByPostcardId(postcards: Array<{ id: string; image_path: string | null }>) {
@@ -654,6 +688,23 @@ export function App() {
     setSuspensionReasons((previous) => ({ ...previous, [reportId]: '' }))
     await refreshAdmin()
     setState({ type: 'success', message: '사용자를 정지했습니다.' })
+  }
+
+  async function unsuspendUser(userId: string) {
+    if (!supabase) return
+
+    setState({ type: 'loading', message: '사용자 정지를 해제하는 중입니다.' })
+    const { error } = await supabase.rpc('unsuspend_user', {
+      target_user_id: userId,
+    })
+
+    if (error) {
+      setState({ type: 'error', message: error.message })
+      return
+    }
+
+    await refreshAdmin()
+    setState({ type: 'success', message: '사용자 정지를 해제했습니다.' })
   }
 
   if (!hasSupabaseConfig) {
@@ -953,8 +1004,13 @@ export function App() {
                   {reports.map((report) => (
                     <article className="postcard-row" key={report.id}>
                       <span className="badge open">{report.status}</span>
+                      {reportImageUrls[report.id] && (
+                        <img className="admin-image" src={reportImageUrls[report.id]} alt="신고된 엽서 사진" />
+                      )}
                       <p>{report.postcard?.content ?? '엽서를 불러올 수 없습니다.'}</p>
                       <p className="field-note">{report.reason}</p>
+                      <p className="mono">작성자: {report.postcard?.author_id ?? '알 수 없음'}</p>
+                      <p className="mono">상태: {report.postcard?.status ?? '알 수 없음'}</p>
                       <label>
                         처리 메모
                         <input
@@ -992,6 +1048,23 @@ export function App() {
                           </button>
                         )}
                       </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <h2>정지 사용자</h2>
+                <div className="list admin-users">
+                  {suspendedUsers.length === 0 && <p>정지된 사용자가 없습니다.</p>}
+                  {suspendedUsers.map((suspendedUser) => (
+                    <article className="postcard-row" key={suspendedUser.user_id}>
+                      <p className="mono">{suspendedUser.email ?? suspendedUser.user_id}</p>
+                      <time>{new Date(suspendedUser.suspended_at).toLocaleString()}</time>
+                      {suspendedUser.suspension_reason && <p>{suspendedUser.suspension_reason}</p>}
+                      <button className="secondary-button" onClick={() => unsuspendUser(suspendedUser.user_id)}>
+                        정지 해제
+                      </button>
                     </article>
                   ))}
                 </div>

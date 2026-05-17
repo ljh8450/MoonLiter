@@ -12,5 +12,6 @@
 -- - 202605170005_fix_invite_admin_user_upsert.sql
 -- - 202605170006_fix_invite_admin_user_conflict.sql
 -- - 202605170007_user_suspensions_and_login_required.sql
+-- - 202605170008_image_path_and_suspended_users.sql
 --
 -- Android/Spring Boot + MySQL 기반 DDL은 향후 구현 경로로 보류한다.

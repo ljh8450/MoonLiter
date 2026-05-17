@@ -11,6 +11,7 @@
 -- - supabase/migrations/202605170005_fix_invite_admin_user_upsert.sql
 -- - supabase/migrations/202605170006_fix_invite_admin_user_conflict.sql
 -- - supabase/migrations/202605170007_user_suspensions_and_login_required.sql
+-- - supabase/migrations/202605170008_image_path_and_suspended_users.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -42,6 +43,18 @@ CREATE TABLE IF NOT EXISTS public.postcards (
     image_byte_size BIGINT CHECK (
         image_byte_size IS NULL
         OR (image_byte_size > 0 AND image_byte_size <= 10485760)
+    ),
+    CHECK (
+        (
+            image_path IS NULL
+            AND image_content_type IS NULL
+            AND image_byte_size IS NULL
+        )
+        OR (
+            image_path IS NOT NULL
+            AND image_content_type IS NOT NULL
+            AND image_byte_size IS NOT NULL
+        )
     ),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'hidden')),
     moderated_by UUID REFERENCES public.admin_users(user_id) ON DELETE SET NULL,
@@ -180,6 +193,36 @@ BEGIN
       JOIN auth.users u
         ON u.id = a.user_id
      ORDER BY a.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.list_suspended_users()
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    suspended_at TIMESTAMPTZ,
+    suspension_reason TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION '관리자 권한이 필요합니다.';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        p.id,
+        u.email::TEXT,
+        p.suspended_at,
+        p.suspension_reason
+      FROM public.profiles p
+      LEFT JOIN auth.users u
+        ON u.id = p.id
+     WHERE p.suspended_at IS NOT NULL
+     ORDER BY p.suspended_at DESC;
 END;
 $$;
 
@@ -344,6 +387,10 @@ CREATE POLICY "users can create own postcards"
         auth.uid() = author_id
         AND status = 'pending'
         AND NOT public.is_suspended()
+        AND (
+            image_path IS NULL
+            OR image_path LIKE ('postcards/' || auth.uid()::TEXT || '/%')
+        )
     );
 
 CREATE POLICY "users can read own postcards"
