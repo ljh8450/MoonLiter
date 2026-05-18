@@ -29,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -177,7 +178,38 @@ class PostcardServiceTest {
         assertThat(receiverId.getValue()).isEqualTo(2L);
     }
 
+    @Test
+    void createFailsWhenEmailUserIsNotVerified() {
+        AppUser author = unverifiedUser(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(author));
+
+        assertThatThrownBy(() -> postcardService.create(1L, "안녕하세요."))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessage("이메일 인증 후 이용할 수 있습니다.");
+
+        verify(postcardRepository, never()).save(any());
+    }
+
+    @Test
+    void assignTodayFailsWhenUserIsSuspended() {
+        AppUser receiver = user(2L);
+        receiver.suspendUntil(Instant.parse("2026-05-14T00:00:00Z"), FIXED_CLOCK.instant());
+        when(userRepository.findById(2L)).thenReturn(Optional.of(receiver));
+
+        assertThatThrownBy(() -> postcardService.assignToday(2L))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessage("정지된 사용자는 주요 기능을 사용할 수 없습니다.");
+
+        verify(postcardDeliveryRepository, never()).findByReceiverIdAndDeliveredDate(any(), any());
+    }
+
     private AppUser user(Long id) {
+        AppUser user = unverifiedUser(id);
+        user.verifyEmail(FIXED_CLOCK.instant());
+        return user;
+    }
+
+    private AppUser unverifiedUser(Long id) {
         AppUser user = new AppUser(
             "user" + id + "@example.com",
             AuthProvider.EMAIL,

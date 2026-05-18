@@ -11,4 +11,6 @@ public interface UserRepository extends JpaRepository<AppUser, Long> {
         AuthProvider authProvider,
         String providerUserId
     );
+
+    boolean existsByVerifiedPhoneHash(String verifiedPhoneHash);
 }

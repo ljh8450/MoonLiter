@@ -9,8 +9,10 @@ import com.moonliter.user.domain.AppUser;
 import com.moonliter.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,12 +39,14 @@ public class PostcardService {
     @Transactional
     public Postcard create(Long authorId, String content) {
         AppUser author = findUser(authorId);
+        validateTrustedFeatureAccess(author);
         return postcardRepository.save(new Postcard(author, content.trim()));
     }
 
     @Transactional
     public PostcardDelivery assignToday(Long receiverId) {
         AppUser receiver = findUser(receiverId);
+        validateTrustedFeatureAccess(receiver);
         LocalDate today = LocalDate.now(clock);
 
         return postcardDeliveryRepository.findByReceiverIdAndDeliveredDate(receiverId, today)
@@ -51,7 +55,8 @@ public class PostcardService {
 
     @Transactional(readOnly = true)
     public PostcardDelivery getToday(Long receiverId) {
-        findUser(receiverId);
+        AppUser receiver = findUser(receiverId);
+        validateTrustedFeatureAccess(receiver);
         LocalDate today = LocalDate.now(clock);
 
         return postcardDeliveryRepository.findByReceiverIdAndDeliveredDate(receiverId, today)
@@ -76,5 +81,15 @@ public class PostcardService {
     private AppUser findUser(Long userId) {
         return userRepository.findById(userId)
             .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
+    }
+
+    private void validateTrustedFeatureAccess(AppUser user) {
+        Instant now = Instant.now(clock);
+        if (user.isSuspendedAt(now)) {
+            throw new AccessDeniedException("정지된 사용자는 주요 기능을 사용할 수 없습니다.");
+        }
+        if (!user.canUseEmailVerifiedFeatures()) {
+            throw new AccessDeniedException("이메일 인증 후 이용할 수 있습니다.");
+        }
     }
 }

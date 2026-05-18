@@ -2,9 +2,10 @@ package com.moonliter.common.web;
 
 import com.moonliter.common.response.ApiResponse;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -48,6 +49,12 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     @ExceptionHandler(EntityNotFoundException.class)
     public ApiResponse<Void> handleNotFound(EntityNotFoundException exception) {
+        return ApiResponse.fail(exception.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(AccessDeniedException.class)
+    public ApiResponse<Void> handleAccessDenied(AccessDeniedException exception) {
         return ApiResponse.fail(exception.getMessage());
     }
 
