@@ -325,8 +325,55 @@ textarea {
   color: #8a2f2a;
 }
 
+.status.warning {
+  color: #6b4a1f;
+}
+
 .account-warning {
   margin-bottom: 18px;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.account-state-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.account-state-list p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+}
+
+.state-pill {
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.state-pill.ok {
+  color: #1e2a38;
+  background: rgba(122, 158, 187, 0.5);
+}
+
+.state-pill.warning {
+  color: #1e2a38;
+  background: rgba(245, 185, 113, 0.72);
+}
+
+.state-pill.danger {
+  color: #f5f1e8;
+  background: rgba(138, 47, 42, 0.86);
 }
 
 @media (max-width: 720px) {

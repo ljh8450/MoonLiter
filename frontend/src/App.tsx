@@ -144,6 +144,14 @@ export function App() {
 
   const isAdminPath = path === '/admin'
   const isSuspended = Boolean(profile?.suspended_at)
+  const authProvider = user?.app_metadata?.provider as string | undefined
+  const isEmailAuthUser = authProvider === 'email'
+  const emailVerifiedAt =
+    (user as { email_confirmed_at?: string | null; confirmed_at?: string | null } | null)?.email_confirmed_at ??
+    (user as { email_confirmed_at?: string | null; confirmed_at?: string | null } | null)?.confirmed_at ??
+    null
+  const isEmailVerified = !user || !isEmailAuthUser || Boolean(emailVerifiedAt)
+  const canUseTrustedFeatures = Boolean(user && isEmailVerified && !isSuspended)
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
@@ -208,6 +216,43 @@ export function App() {
     setToday(null)
     setTodayImageUrl(null)
     setState({ type: 'success', message: '조용히 문을 닫았습니다.' })
+  }
+
+  async function refreshCurrentUser() {
+    if (!supabase) return
+
+    const { data, error } = await supabase.auth.getUser()
+    if (error) {
+      setState({ type: 'error', message: error.message })
+      return
+    }
+    setUser(data.user)
+    setState({ type: 'success', message: '계정 상태를 다시 확인했습니다.' })
+  }
+
+  async function resendVerificationEmail() {
+    if (!supabase || !user?.email) return
+
+    setState({ type: 'loading', message: '확인 메일을 다시 보내는 중입니다.' })
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: user.email,
+      options: { emailRedirectTo: window.location.origin },
+    })
+    setState(error ? { type: 'error', message: error.message } : { type: 'success', message: '메일함을 확인해주세요.' })
+  }
+
+  function guardTrustedFeature(message: string) {
+    if (!user) return false
+    if (!isEmailVerified) {
+      setState({ type: 'error', message: '이메일 인증 후 이용할 수 있습니다.' })
+      return false
+    }
+    if (isSuspended) {
+      setState({ type: 'error', message })
+      return false
+    }
+    return true
   }
 
   async function refreshProfile() {
@@ -311,6 +356,9 @@ export function App() {
     if (!supabase || !user || !imageFile) {
       return null
     }
+    if (!isEmailVerified) {
+      throw new Error('이메일 인증 후 사진을 올릴 수 있습니다.')
+    }
 
     const validationMessage = validateImageFile(imageFile)
     if (validationMessage) {
@@ -339,10 +387,7 @@ export function App() {
     if (!supabase || !user || !content.trim()) {
       return
     }
-    if (isSuspended) {
-      setState({ type: 'error', message: '정지된 계정은 엽서를 보낼 수 없습니다.' })
-      return
-    }
+    if (!guardTrustedFeature('정지된 계정은 엽서를 보낼 수 없습니다.')) return
 
     setState({ type: 'loading', message: '엽서를 우체통에 넣는 중입니다.' })
 
@@ -381,10 +426,7 @@ export function App() {
     if (!supabase || !user) {
       return
     }
-    if (isSuspended) {
-      setState({ type: 'error', message: '정지된 계정은 엽서를 받을 수 없습니다.' })
-      return
-    }
+    if (!guardTrustedFeature('정지된 계정은 엽서를 받을 수 없습니다.')) return
 
     setState({ type: 'loading', message: '오늘 도착한 마음을 여는 중입니다.' })
 
@@ -464,6 +506,16 @@ export function App() {
 
   async function refreshAdmin() {
     if (!supabase || !user) return
+    if (!isEmailVerified) {
+      setIsAdmin(false)
+      setPendingPostcards([])
+      setAdminImageUrls({})
+      setReportImageUrls({})
+      setReports([])
+      setAdminUsers([])
+      setSuspendedUsers([])
+      return
+    }
 
     const { data: adminRows, error: adminError } = await supabase.from('admin_users').select('user_id').eq('user_id', user.id)
     if (adminError || !adminRows?.length) {
@@ -537,10 +589,7 @@ export function App() {
 
   async function createUserAction(delivery: TodayPostcard | ReceivedDelivery, actionType: 'not_interested' | 'hidden') {
     if (!supabase || !user) return
-    if (isSuspended) {
-      setState({ type: 'error', message: '정지된 계정은 엽서 액션을 남길 수 없습니다.' })
-      return
-    }
+    if (!guardTrustedFeature('정지된 계정은 엽서 액션을 남길 수 없습니다.')) return
 
     const deliveryId = 'delivery_id' in delivery ? delivery.delivery_id : delivery.id
     const postcardId = delivery.postcard_id
@@ -568,10 +617,7 @@ export function App() {
 
   async function createReport(delivery: TodayPostcard | ReceivedDelivery, reason: string) {
     if (!supabase || !user || !reason.trim()) return
-    if (isSuspended) {
-      setState({ type: 'error', message: '정지된 계정은 신고를 접수할 수 없습니다.' })
-      return
-    }
+    if (!guardTrustedFeature('정지된 계정은 신고를 접수할 수 없습니다.')) return
 
     const deliveryId = 'delivery_id' in delivery ? delivery.delivery_id : delivery.id
     const postcardId = delivery.postcard_id
@@ -769,6 +815,20 @@ export function App() {
             </section>
           )}
 
+          {!isEmailVerified && (
+            <section className="status warning account-warning">
+              이메일 인증 후 엽서 쓰기, 오늘의 엽서, 신고 기능을 이용할 수 있습니다.
+              <div className="inline-actions">
+                <button className="secondary-button" onClick={resendVerificationEmail} disabled={state.type === 'loading'}>
+                  확인 메일 다시 보내기
+                </button>
+                <button className="secondary-button" onClick={refreshCurrentUser} disabled={state.type === 'loading'}>
+                  인증 상태 확인
+                </button>
+              </div>
+            </section>
+          )}
+
           {!isAdminPath && activeTab === 'write' && (
             <section className="workspace">
               <section className="panel">
@@ -804,7 +864,7 @@ export function App() {
                 </label>
                 <div className="actions">
                   <span>{content.length}/500</span>
-                  <button disabled={!content.trim() || state.type === 'loading' || isSuspended} onClick={writePostcard}>
+                  <button disabled={!content.trim() || state.type === 'loading' || !canUseTrustedFeatures} onClick={writePostcard}>
                     보내기
                   </button>
                 </div>
@@ -814,15 +874,15 @@ export function App() {
                 <h2>오늘의 엽서</h2>
                 {todayImageUrl && <img className="received-image" src={todayImageUrl} alt="오늘 받은 엽서 사진" />}
                 {today ? <p className="postcard-text">{today.content}</p> : <p>아직 열린 엽서가 없습니다.</p>}
-                <button onClick={openTodayPostcard} disabled={state.type === 'loading' || isSuspended}>
+                <button onClick={openTodayPostcard} disabled={state.type === 'loading' || !canUseTrustedFeatures}>
                   오늘의 엽서 받기
                 </button>
                 {today && (
                   <div className="quiet-actions">
-                    <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(today, 'not_interested')}>
+                    <button className="secondary-button" disabled={!canUseTrustedFeatures} onClick={() => createUserAction(today, 'not_interested')}>
                       관심없음
                     </button>
-                    <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(today, 'hidden')}>
+                    <button className="secondary-button" disabled={!canUseTrustedFeatures} onClick={() => createUserAction(today, 'hidden')}>
                       숨김
                     </button>
                     <label>
@@ -834,7 +894,7 @@ export function App() {
                         placeholder="관리자에게 전할 내용을 적어주세요."
                       />
                     </label>
-                    <button disabled={!reportReason.trim() || isSuspended} onClick={() => createReport(today, reportReason)}>
+                    <button disabled={!reportReason.trim() || !canUseTrustedFeatures} onClick={() => createReport(today, reportReason)}>
                       신고
                     </button>
                   </div>
@@ -876,10 +936,10 @@ export function App() {
                       )}
                       <p>{delivery.postcard?.content ?? '열 수 없는 엽서입니다.'}</p>
                       <div className="row-actions">
-                        <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(delivery, 'not_interested')}>
+                        <button className="secondary-button" disabled={!canUseTrustedFeatures} onClick={() => createUserAction(delivery, 'not_interested')}>
                           관심없음
                         </button>
-                        <button className="secondary-button" disabled={isSuspended} onClick={() => createUserAction(delivery, 'hidden')}>
+                        <button className="secondary-button" disabled={!canUseTrustedFeatures} onClick={() => createUserAction(delivery, 'hidden')}>
                           숨김
                         </button>
                       </div>
@@ -895,7 +955,7 @@ export function App() {
                         />
                       </label>
                       <button
-                        disabled={!(historyReportReasons[delivery.id] ?? '').trim() || isSuspended}
+                        disabled={!(historyReportReasons[delivery.id] ?? '').trim() || !canUseTrustedFeatures}
                         onClick={() => createReport(delivery, historyReportReasons[delivery.id] ?? '')}
                       >
                         신고
@@ -945,6 +1005,30 @@ export function App() {
               <section className="panel night-panel">
                 <h2>현재 세션</h2>
                 <p className="mono">{user.email ?? user.id}</p>
+                <div className="account-state-list">
+                  <p>
+                    이메일 인증
+                    <span className={isEmailVerified ? 'state-pill ok' : 'state-pill warning'}>
+                      {isEmailVerified ? '완료' : '대기'}
+                    </span>
+                  </p>
+                  <p>
+                    이용 상태
+                    <span className={isSuspended ? 'state-pill danger' : 'state-pill ok'}>
+                      {isSuspended ? '정지' : '정상'}
+                    </span>
+                  </p>
+                </div>
+                {!isEmailVerified && (
+                  <div className="button-grid">
+                    <button className="secondary-dark-button" onClick={resendVerificationEmail} disabled={state.type === 'loading'}>
+                      확인 메일 다시 보내기
+                    </button>
+                    <button className="secondary-dark-button" onClick={refreshCurrentUser} disabled={state.type === 'loading'}>
+                      인증 상태 확인
+                    </button>
+                  </div>
+                )}
                 <button onClick={signOut}>로그아웃</button>
               </section>
             </section>
