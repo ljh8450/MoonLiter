@@ -14,3 +14,12 @@ spring:
         jwt:
           issuer-uri: https://test.supabase.co/auth/v1
           jwk-set-uri: https://test.supabase.co/auth/v1/.well-known/jwks.json
+
+moonliter:
+  phone:
+    hash-secret: test-phone-hash-secret
+  sms:
+    solapi:
+      api-key: test-api-key
+      api-secret: test-api-secret
+      sender: '01012345678'

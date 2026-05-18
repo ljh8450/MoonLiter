@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { hasSupabaseConfig, supabase } from './supabase'
+import { apiBaseUrl, hasSupabaseConfig, supabase } from './supabase'
 
 type TodayPostcard = {
   delivery_id: string
@@ -43,6 +43,15 @@ type Profile = {
   id: string
   suspended_at: string | null
   suspension_reason: string | null
+}
+
+type AccountIntegrity = {
+  userId: number
+  email: string
+  emailVerified: boolean
+  emailVerifiedAt: string | null
+  phoneVerified: boolean
+  phoneVerifiedAt: string | null
 }
 
 type AdminPostcard = AuthoredPostcard & {
@@ -103,6 +112,7 @@ type UploadedImage = {
 export function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [accountIntegrity, setAccountIntegrity] = useState<AccountIntegrity | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('write')
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -121,6 +131,9 @@ export function App() {
   const [suspendedUsers, setSuspendedUsers] = useState<SuspendedUser[]>([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [phoneOtp, setPhoneOtp] = useState('')
+  const [phoneOtpRequested, setPhoneOtpRequested] = useState(false)
   const [adminInviteEmail, setAdminInviteEmail] = useState('')
   const [reportReason, setReportReason] = useState('')
   const [historyReportReasons, setHistoryReportReasons] = useState<Record<string, string>>({})
@@ -150,8 +163,10 @@ export function App() {
     (user as { email_confirmed_at?: string | null; confirmed_at?: string | null } | null)?.email_confirmed_at ??
     (user as { email_confirmed_at?: string | null; confirmed_at?: string | null } | null)?.confirmed_at ??
     null
+  const phoneVerifiedAt = (user as { phone_confirmed_at?: string | null } | null)?.phone_confirmed_at ?? null
   const isEmailVerified = !user || !isEmailAuthUser || Boolean(emailVerifiedAt)
-  const canUseTrustedFeatures = Boolean(user && isEmailVerified && !isSuspended)
+  const isPhoneVerified = Boolean(accountIntegrity?.phoneVerified || (user?.phone && phoneVerifiedAt))
+  const canUseTrustedFeatures = Boolean(user && isEmailVerified && isPhoneVerified && !isSuspended)
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
@@ -174,6 +189,7 @@ export function App() {
   useEffect(() => {
     if (!user) {
       setProfile(null)
+      setAccountIntegrity(null)
       setAuthoredPostcards([])
       setReceivedDeliveries([])
       setReceivedImageUrls({})
@@ -189,6 +205,7 @@ export function App() {
     }
 
     void refreshProfile()
+    void refreshAccountIntegrity()
     void refreshHistory()
     void refreshAdmin()
   }, [user])
@@ -242,10 +259,119 @@ export function App() {
     setState(error ? { type: 'error', message: error.message } : { type: 'success', message: '메일함을 확인해주세요.' })
   }
 
+  async function callApi<T>(path: string, options: { method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<T> {
+    if (!supabase || !apiBaseUrl) {
+      throw new Error('백엔드 API 주소가 필요합니다. VITE_API_BASE_URL을 설정해주세요.')
+    }
+
+    const { data, error } = await supabase.auth.getSession()
+    if (error || !data.session?.access_token) {
+      throw new Error(error?.message ?? '로그인이 필요합니다.')
+    }
+
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      method: options.method ?? 'POST',
+      headers: {
+        Authorization: `Bearer ${data.session.access_token}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    })
+    const result = (await response.json()) as { success: boolean; data?: T; message?: string | null }
+    if (!response.ok || !result.success) {
+      throw new Error(result.message ?? '요청을 처리하지 못했습니다.')
+    }
+    return result.data as T
+  }
+
+  async function refreshAccountIntegrity() {
+    if (!user || !apiBaseUrl) {
+      setAccountIntegrity(null)
+      return
+    }
+
+    try {
+      setAccountIntegrity(await callApi<AccountIntegrity>('/api/v1/account/me', { method: 'GET' }))
+    } catch {
+      setAccountIntegrity(null)
+    }
+  }
+
+  function normalizePhoneNumber(value: string) {
+    return value.replace(/[\s-]/g, '')
+  }
+
+  function validatePhoneNumber(value: string) {
+    const normalized = normalizePhoneNumber(value)
+    if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+      return '국가번호를 포함한 전화번호를 입력해주세요. 예: +821012345678'
+    }
+    return null
+  }
+
+  async function requestPhoneVerification() {
+    if (!supabase || !user || !phoneNumber.trim()) return
+
+    const validationMessage = validatePhoneNumber(phoneNumber)
+    if (validationMessage) {
+      setState({ type: 'error', message: validationMessage })
+      return
+    }
+
+    setState({ type: 'loading', message: '전화번호 인증 문자를 보내는 중입니다.' })
+    try {
+      const normalizedPhone = normalizePhoneNumber(phoneNumber)
+      await callApi('/api/v1/account/phone/verification', {
+        body: { phoneNumber: normalizedPhone },
+      })
+      setPhoneNumber(normalizedPhone)
+      setPhoneOtpRequested(true)
+      setState({ type: 'success', message: '인증번호를 보냈습니다.' })
+    } catch (error) {
+      setState({
+        type: 'error',
+        message: error instanceof Error ? error.message : '인증번호를 보내지 못했습니다.',
+      })
+    }
+  }
+
+  async function verifyPhoneOtp() {
+    if (!supabase || !user || !phoneNumber.trim() || !phoneOtp.trim()) return
+
+    const validationMessage = validatePhoneNumber(phoneNumber)
+    if (validationMessage) {
+      setState({ type: 'error', message: validationMessage })
+      return
+    }
+
+    setState({ type: 'loading', message: '전화번호 인증을 확인하는 중입니다.' })
+    try {
+      await callApi('/api/v1/account/phone/verification/confirm', {
+        body: {
+          phoneNumber: normalizePhoneNumber(phoneNumber),
+          code: phoneOtp.trim(),
+        },
+      })
+      setPhoneOtp('')
+      setPhoneOtpRequested(false)
+      await refreshAccountIntegrity()
+      await refreshCurrentUser()
+    } catch (error) {
+      setState({
+        type: 'error',
+        message: error instanceof Error ? error.message : '전화번호 인증을 확인하지 못했습니다.',
+      })
+    }
+  }
+
   function guardTrustedFeature(message: string) {
     if (!user) return false
     if (!isEmailVerified) {
       setState({ type: 'error', message: '이메일 인증 후 이용할 수 있습니다.' })
+      return false
+    }
+    if (!isPhoneVerified) {
+      setState({ type: 'error', message: '전화번호 인증 후 이용할 수 있습니다.' })
       return false
     }
     if (isSuspended) {
@@ -358,6 +484,9 @@ export function App() {
     }
     if (!isEmailVerified) {
       throw new Error('이메일 인증 후 사진을 올릴 수 있습니다.')
+    }
+    if (!isPhoneVerified) {
+      throw new Error('전화번호 인증 후 사진을 올릴 수 있습니다.')
     }
 
     const validationMessage = validateImageFile(imageFile)
@@ -829,6 +958,20 @@ export function App() {
             </section>
           )}
 
+          {isEmailVerified && !isPhoneVerified && (
+            <section className="status warning account-warning">
+              전화번호 인증 후 엽서 쓰기, 오늘의 엽서, 신고 기능을 이용할 수 있습니다.
+              <div className="inline-actions">
+                <button className="secondary-button" onClick={() => setActiveTab('account')}>
+                  전화번호 인증하기
+                </button>
+                <button className="secondary-button" onClick={refreshCurrentUser} disabled={state.type === 'loading'}>
+                  인증 상태 확인
+                </button>
+              </div>
+            </section>
+          )}
+
           {!isAdminPath && activeTab === 'write' && (
             <section className="workspace">
               <section className="panel">
@@ -1013,11 +1156,55 @@ export function App() {
                     </span>
                   </p>
                   <p>
+                    전화번호 인증
+                    <span className={isPhoneVerified ? 'state-pill ok' : 'state-pill warning'}>
+                      {isPhoneVerified ? '완료' : '대기'}
+                    </span>
+                  </p>
+                  <p>
                     이용 상태
                     <span className={isSuspended ? 'state-pill danger' : 'state-pill ok'}>
                       {isSuspended ? '정지' : '정상'}
                     </span>
                   </p>
+                </div>
+                <div className="phone-verification">
+                  <label>
+                    전화번호
+                    <input
+                      value={phoneNumber}
+                      onChange={(event) => setPhoneNumber(event.target.value)}
+                      placeholder="+821012345678"
+                    />
+                  </label>
+                  <button
+                    className="secondary-dark-button"
+                    onClick={requestPhoneVerification}
+                    disabled={!phoneNumber.trim() || state.type === 'loading'}
+                  >
+                    인증번호 받기
+                  </button>
+                  {phoneOtpRequested && (
+                    <>
+                      <label>
+                        인증번호
+                        <input
+                          value={phoneOtp}
+                          inputMode="numeric"
+                          maxLength={6}
+                          onChange={(event) => setPhoneOtp(event.target.value)}
+                          placeholder="6자리"
+                        />
+                      </label>
+                      <button
+                        className="secondary-dark-button"
+                        onClick={verifyPhoneOtp}
+                        disabled={!phoneOtp.trim() || state.type === 'loading'}
+                      >
+                        인증 확인
+                      </button>
+                    </>
+                  )}
                 </div>
                 {!isEmailVerified && (
                   <div className="button-grid">

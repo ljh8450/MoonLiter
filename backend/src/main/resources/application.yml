@@ -33,6 +33,16 @@ management:
       exposure:
         include: health
 
+moonliter:
+  phone:
+    hash-secret: ${PHONE_HASH_SECRET}
+  sms:
+    solapi:
+      base-url: ${SOLAPI_BASE_URL:https://api.solapi.com}
+      api-key: ${SOLAPI_API_KEY}
+      api-secret: ${SOLAPI_API_SECRET}
+      sender: ${SOLAPI_SENDER}
+
 springdoc:
   api-docs:
     path: /v3/api-docs
