@@ -11,6 +11,7 @@ Android/Spring Boot REST API는 향후 구현 후보이며, 현재 웹 MVP의 �
 - 오늘의 엽서 배정 RPC는 `approved` 상태 엽서만 반환한다.
 - 사진은 private Storage bucket에 저장하고, 화면 표시 시 클라이언트가 `image_path`로 1시간짜리 signed URL을 생성한다.
 - 작성 기록, 수신 기록 목록, 신고, 사용자별 관심없음/숨김, 관리자 페이지, 관리자 권한 관리, 사용자 정지는 구현되어 있다.
+- 전화번호 인증은 Supabase Auth 전화번호 변경 OTP 흐름을 사용하고, 인증 완료 상태는 `profiles.phone_verified_at`과 RLS/RPC에서 강제한다.
 - 고아 파일 정기 정리는 Edge Function `cleanup-orphan-postcard-images`로 수행한다.
 
 ## 공통 규칙
@@ -33,8 +34,10 @@ VITE_SUPABASE_ANON_KEY=
 - `public.admin_users`
 - `public.postcard_user_actions`
 - `public.postcard_reports`
+- `public.profiles.phone_verified_at`
 - Storage bucket: `postcard-images`
 - RPC: `public.assign_today_postcard()`
+- RPC: `public.sync_my_phone_verification()`
 - RPC: `public.approve_postcard(postcard_id)`
 - RPC: `public.reject_postcard(postcard_id, note)`
 - RPC: `public.hide_postcard(postcard_id, note)`
@@ -64,6 +67,29 @@ await supabase.auth.signInWithPassword({ email, password })
 - 신규 사용자가 생성되면 `auth.users` 트리거가 `public.profiles` 행을 생성한다.
 - RPC에서도 현재 사용자 프로필이 없으면 보정 생성한다.
 - 정지된 사용자는 엽서 작성, 오늘의 엽서 수신, 신고, 사용자 사후 액션, 이미지 업로드가 제한된다.
+- 전화번호 인증이 완료되지 않은 사용자는 엽서 작성, 오늘의 엽서 수신, 신고, 사용자 사후 액션, 이미지 업로드가 제한된다.
+
+## 전화번호 인증
+
+웹앱은 로그인한 사용자에게 Supabase Auth 전화번호 변경 OTP를 요청한다.
+
+```ts
+await supabase.auth.updateUser({ phone: '+821012345678' })
+await supabase.auth.verifyOtp({
+  phone: '+821012345678',
+  token: '123456',
+  type: 'phone_change',
+})
+await supabase.rpc('sync_my_phone_verification')
+```
+
+### 동작 규칙
+
+- 전화번호는 E.164 형식으로 입력한다. 예: `+821012345678`.
+- `sync_my_phone_verification()`은 현재 사용자의 `auth.users.phone_confirmed_at`이 있을 때만 `profiles.phone_verified_at`을 보정한다.
+- 클라이언트는 `profiles.phone_verified_at` 또는 현재 세션의 `phone_confirmed_at`을 기준으로 인증 완료 상태를 표시한다.
+- 최종 권한 판단은 프론트엔드 버튼 상태가 아니라 Supabase RLS/RPC의 `can_use_trusted_features()` 기준으로 수행한다.
+- Spring Boot 계정 신뢰성 코드는 향후 API 전환을 위한 병행 구현이며, 현재 웹 MVP의 최종 권한 기준은 Supabase DB/RLS/RPC다.
 
 ## 사진 업로드
 
@@ -87,6 +113,7 @@ postcards/{auth.users.id}/{random_uuid}.{extension}
 ### 검증 규칙
 
 - 사용자는 자기 사용자 ID 폴더 아래에만 업로드할 수 있다.
+- 사용자는 전화번호 인증이 완료된 정상 계정일 때만 업로드할 수 있다.
 - 버킷은 private이다.
 - MVP 클라이언트는 `image/jpeg`, `image/png`, `image/webp`만 허용한다.
 - 선택한 파일은 10MB 이하여야 한다.
@@ -122,6 +149,7 @@ status: 기본값 pending
 ### 검증 규칙
 
 - `author_id`는 현재 로그인 사용자와 같아야 한다.
+- 작성자는 전화번호 인증이 완료된 정상 계정이어야 한다.
 - 새 엽서는 기본적으로 `pending` 상태로 생성된다.
 - 클라이언트는 `approved` 상태의 엽서를 직접 생성하거나 변경할 수 없다.
 - `content`는 공백 제거 후 1자 이상 500자 이하여야 한다.
@@ -158,8 +186,10 @@ const { data, error } = await supabase.rpc('assign_today_postcard')
 ### 동작 규칙
 
 - 같은 사용자는 같은 UTC 날짜에 하나의 엽서만 배정받는다.
+- 수신자는 전화번호 인증이 완료된 정상 계정이어야 한다.
 - 자기 자신이 작성한 엽서는 배정하지 않는다.
 - `approved` 상태의 엽서만 배정한다.
+- 정지되었거나 전화번호 인증이 완료되지 않은 작성자의 엽서는 배정하지 않는다.
 - 이미 오늘 배정받은 엽서가 있으면 기존 배정을 반환한다.
 - 배정 가능한 엽서가 없으면 RPC 예외가 발생한다.
 
@@ -202,6 +232,7 @@ await supabase.from('postcard_user_actions').insert({
 
 - `action_type`은 `not_interested`, `hidden`만 허용한다.
 - 사용자는 본인이 받은 delivery에 대해서만 액션을 생성할 수 있다.
+- 사용자는 전화번호 인증이 완료된 정상 계정일 때만 액션을 생성할 수 있다.
 - `hidden`은 해당 사용자 화면에서만 제외하기 위한 개인 액션이며, 엽서 자체 `status`를 바꾸지 않는다.
 - 같은 사용자는 같은 엽서에 같은 액션을 한 번만 생성할 수 있다.
 
@@ -219,6 +250,7 @@ await supabase.from('postcard_reports').insert({
 ### 동작 규칙
 
 - 사용자는 본인이 받은 delivery에 대해서만 신고할 수 있다.
+- 사용자는 전화번호 인증이 완료된 정상 계정일 때만 신고할 수 있다.
 - `reason`은 공백 제거 후 1자 이상 500자 이하여야 한다.
 - 신고 상태 기본값은 `open`이다.
 - 같은 사용자는 같은 엽서를 한 번만 신고할 수 있다.
@@ -327,7 +359,7 @@ curl -X POST \
 
 - Supabase 환경 변수가 없으면 웹앱은 설정 필요 화면을 표시한다.
 - 소셜 provider 설정이 없거나 redirect URL이 맞지 않으면 로그인에 실패한다.
-- 정지된 사용자가 쓰기/받기/신고/업로드를 시도하면 권한 오류가 발생한다.
+- 전화번호 인증이 완료되지 않았거나 정지된 사용자가 쓰기/받기/신고/업로드를 시도하면 권한 오류가 발생한다.
 - Storage 버킷이나 정책이 없으면 사진 업로드에 실패한다.
 - 승인된 배정 가능 엽서가 없으면 오늘의 엽서 받기에 실패한다.
 - signed URL 생성 권한이 없으면 이미지 표시가 실패한다.

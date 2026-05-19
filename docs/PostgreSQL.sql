@@ -12,6 +12,7 @@
 -- - supabase/migrations/202605170006_fix_invite_admin_user_conflict.sql
 -- - supabase/migrations/202605170007_user_suspensions_and_login_required.sql
 -- - supabase/migrations/202605170008_image_path_and_suspended_users.sql
+-- - supabase/migrations/202605190001_phone_verification_trust_policies.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -22,6 +23,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     suspension_reason TEXT CHECK (
         suspension_reason IS NULL
         OR char_length(trim(suspension_reason)) BETWEEN 1 AND 500
+    ),
+    phone_verified_at TIMESTAMPTZ,
+    phone_verified_source TEXT CHECK (
+        phone_verified_source IS NULL
+        OR phone_verified_source IN ('supabase_auth', 'spring_boot_migration')
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -193,6 +199,74 @@ BEGIN
       JOIN auth.users u
         ON u.id = a.user_id
      ORDER BY a.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_verified_phone(target_user_id UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT target_user_id IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+             FROM auth.users u
+             LEFT JOIN public.profiles p
+               ON p.id = u.id
+            WHERE u.id = target_user_id
+              AND coalesce(p.phone_verified_at, u.phone_confirmed_at) IS NOT NULL
+       );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_use_trusted_features(target_user_id UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT target_user_id IS NOT NULL
+       AND public.has_verified_phone(target_user_id)
+       AND NOT public.is_suspended(target_user_id);
+$$;
+
+CREATE OR REPLACE FUNCTION public.sync_my_phone_verification()
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_user_id UUID := auth.uid();
+    confirmed_at TIMESTAMPTZ;
+    updated_profile public.profiles%ROWTYPE;
+BEGIN
+    IF current_user_id IS NULL THEN
+        RAISE EXCEPTION '로그인이 필요합니다.';
+    END IF;
+
+    SELECT u.phone_confirmed_at
+      INTO confirmed_at
+      FROM auth.users u
+     WHERE u.id = current_user_id;
+
+    IF confirmed_at IS NULL THEN
+        RAISE EXCEPTION 'Supabase Auth 전화번호 인증이 필요합니다.';
+    END IF;
+
+    INSERT INTO public.profiles (id)
+    VALUES (current_user_id)
+    ON CONFLICT (id) DO NOTHING;
+
+    UPDATE public.profiles
+       SET phone_verified_at = coalesce(phone_verified_at, confirmed_at),
+           phone_verified_source = coalesce(phone_verified_source, 'supabase_auth')
+     WHERE id = current_user_id
+     RETURNING * INTO updated_profile;
+
+    RETURN updated_profile;
 END;
 $$;
 
@@ -386,7 +460,7 @@ CREATE POLICY "users can create own postcards"
     WITH CHECK (
         auth.uid() = author_id
         AND status = 'pending'
-        AND NOT public.is_suspended()
+        AND public.can_use_trusted_features()
         AND (
             image_path IS NULL
             OR image_path LIKE ('postcards/' || auth.uid()::TEXT || '/%')
@@ -426,7 +500,7 @@ CREATE POLICY "users can create own postcard actions"
     ON public.postcard_user_actions FOR INSERT
     WITH CHECK (
         auth.uid() = user_id
-        AND NOT public.is_suspended()
+        AND public.can_use_trusted_features()
         AND EXISTS (
             SELECT 1
               FROM public.postcard_deliveries d
@@ -452,7 +526,7 @@ CREATE POLICY "users can create own reports"
     ON public.postcard_reports FOR INSERT
     WITH CHECK (
         auth.uid() = reporter_id
-        AND NOT public.is_suspended()
+        AND public.can_use_trusted_features()
         AND status = 'open'
         AND handled_by IS NULL
         AND handled_at IS NULL
@@ -490,7 +564,7 @@ CREATE POLICY "users can upload own postcard images"
         bucket_id = 'postcard-images'
         AND (storage.foldername(name))[1] = 'postcards'
         AND auth.uid()::text = (storage.foldername(name))[2]
-        AND NOT public.is_suspended()
+        AND public.can_use_trusted_features()
     );
 
 CREATE POLICY "users can read related postcard images"
@@ -731,8 +805,8 @@ BEGIN
     VALUES (current_user_id)
     ON CONFLICT (id) DO NOTHING;
 
-    IF public.is_suspended(current_user_id) THEN
-        RAISE EXCEPTION '정지된 사용자는 엽서를 받을 수 없습니다.';
+    IF NOT public.can_use_trusted_features(current_user_id) THEN
+        RAISE EXCEPTION '전화번호 인증이 완료된 정상 계정만 엽서를 받을 수 있습니다.';
     END IF;
 
     SELECT *
@@ -748,7 +822,7 @@ BEGIN
           FROM public.postcards
          WHERE status = 'approved'
            AND author_id <> current_user_id
-           AND NOT public.is_suspended(author_id)
+           AND public.can_use_trusted_features(author_id)
            AND NOT EXISTS (
              SELECT 1
                FROM public.postcard_deliveries d
@@ -780,6 +854,6 @@ BEGIN
      FROM public.postcards p
      WHERE p.id = existing_delivery.postcard_id
        AND p.status = 'approved'
-       AND NOT public.is_suspended(p.author_id);
+       AND public.can_use_trusted_features(p.author_id);
 END;
 $$;

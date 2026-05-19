@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { apiBaseUrl, hasSupabaseConfig, supabase } from './supabase'
+import { hasSupabaseConfig, supabase } from './supabase'
 
 type TodayPostcard = {
   delivery_id: string
@@ -43,15 +43,7 @@ type Profile = {
   id: string
   suspended_at: string | null
   suspension_reason: string | null
-}
-
-type AccountIntegrity = {
-  userId: number
-  email: string
-  emailVerified: boolean
-  emailVerifiedAt: string | null
-  phoneVerified: boolean
-  phoneVerifiedAt: string | null
+  phone_verified_at: string | null
 }
 
 type AdminPostcard = AuthoredPostcard & {
@@ -112,7 +104,6 @@ type UploadedImage = {
 export function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [accountIntegrity, setAccountIntegrity] = useState<AccountIntegrity | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('write')
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -165,7 +156,7 @@ export function App() {
     null
   const phoneVerifiedAt = (user as { phone_confirmed_at?: string | null } | null)?.phone_confirmed_at ?? null
   const isEmailVerified = !user || !isEmailAuthUser || Boolean(emailVerifiedAt)
-  const isPhoneVerified = Boolean(accountIntegrity?.phoneVerified || (user?.phone && phoneVerifiedAt))
+  const isPhoneVerified = Boolean(profile?.phone_verified_at || (user?.phone && phoneVerifiedAt))
   const canUseTrustedFeatures = Boolean(user && isEmailVerified && isPhoneVerified && !isSuspended)
 
   useEffect(() => {
@@ -189,7 +180,6 @@ export function App() {
   useEffect(() => {
     if (!user) {
       setProfile(null)
-      setAccountIntegrity(null)
       setAuthoredPostcards([])
       setReceivedDeliveries([])
       setReceivedImageUrls({})
@@ -205,7 +195,6 @@ export function App() {
     }
 
     void refreshProfile()
-    void refreshAccountIntegrity()
     void refreshHistory()
     void refreshAdmin()
   }, [user])
@@ -244,6 +233,9 @@ export function App() {
       return
     }
     setUser(data.user)
+    if ((data.user as { phone_confirmed_at?: string | null } | null)?.phone_confirmed_at) {
+      await syncSupabasePhoneVerification(false)
+    }
     setState({ type: 'success', message: '계정 상태를 다시 확인했습니다.' })
   }
 
@@ -257,44 +249,6 @@ export function App() {
       options: { emailRedirectTo: window.location.origin },
     })
     setState(error ? { type: 'error', message: error.message } : { type: 'success', message: '메일함을 확인해주세요.' })
-  }
-
-  async function callApi<T>(path: string, options: { method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<T> {
-    if (!supabase || !apiBaseUrl) {
-      throw new Error('백엔드 API 주소가 필요합니다. VITE_API_BASE_URL을 설정해주세요.')
-    }
-
-    const { data, error } = await supabase.auth.getSession()
-    if (error || !data.session?.access_token) {
-      throw new Error(error?.message ?? '로그인이 필요합니다.')
-    }
-
-    const response = await fetch(`${apiBaseUrl}${path}`, {
-      method: options.method ?? 'POST',
-      headers: {
-        Authorization: `Bearer ${data.session.access_token}`,
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    })
-    const result = (await response.json()) as { success: boolean; data?: T; message?: string | null }
-    if (!response.ok || !result.success) {
-      throw new Error(result.message ?? '요청을 처리하지 못했습니다.')
-    }
-    return result.data as T
-  }
-
-  async function refreshAccountIntegrity() {
-    if (!user || !apiBaseUrl) {
-      setAccountIntegrity(null)
-      return
-    }
-
-    try {
-      setAccountIntegrity(await callApi<AccountIntegrity>('/api/v1/account/me', { method: 'GET' }))
-    } catch {
-      setAccountIntegrity(null)
-    }
   }
 
   function normalizePhoneNumber(value: string) {
@@ -321,9 +275,8 @@ export function App() {
     setState({ type: 'loading', message: '전화번호 인증 문자를 보내는 중입니다.' })
     try {
       const normalizedPhone = normalizePhoneNumber(phoneNumber)
-      await callApi('/api/v1/account/phone/verification', {
-        body: { phoneNumber: normalizedPhone },
-      })
+      const { error } = await supabase.auth.updateUser({ phone: normalizedPhone })
+      if (error) throw error
       setPhoneNumber(normalizedPhone)
       setPhoneOtpRequested(true)
       setState({ type: 'success', message: '인증번호를 보냈습니다.' })
@@ -346,15 +299,16 @@ export function App() {
 
     setState({ type: 'loading', message: '전화번호 인증을 확인하는 중입니다.' })
     try {
-      await callApi('/api/v1/account/phone/verification/confirm', {
-        body: {
-          phoneNumber: normalizePhoneNumber(phoneNumber),
-          code: phoneOtp.trim(),
-        },
+      const { error } = await supabase.auth.verifyOtp({
+        phone: normalizePhoneNumber(phoneNumber),
+        token: phoneOtp.trim(),
+        type: 'phone_change',
       })
+      if (error) throw error
+
       setPhoneOtp('')
       setPhoneOtpRequested(false)
-      await refreshAccountIntegrity()
+      await syncSupabasePhoneVerification(true)
       await refreshCurrentUser()
     } catch (error) {
       setState({
@@ -386,7 +340,7 @@ export function App() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, suspended_at, suspension_reason')
+      .select('id, suspended_at, suspension_reason, phone_verified_at')
       .eq('id', user.id)
       .single()
 
@@ -396,6 +350,17 @@ export function App() {
     }
 
     setProfile(data as Profile)
+  }
+
+  async function syncSupabasePhoneVerification(raiseOnError: boolean) {
+    if (!supabase) return
+
+    const { error } = await supabase.rpc('sync_my_phone_verification')
+    if (error) {
+      if (raiseOnError) throw error
+      return
+    }
+    await refreshProfile()
   }
 
   async function sendMagicLink() {

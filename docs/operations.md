@@ -35,6 +35,7 @@
 202605170006_fix_invite_admin_user_conflict.sql
 202605170007_user_suspensions_and_login_required.sql
 202605170008_image_path_and_suspended_users.sql
+202605190001_phone_verification_trust_policies.sql
 ```
 
 적용 후 확인할 항목:
@@ -45,6 +46,7 @@
 - `assign_today_postcard()`는 `approved` 상태만 반환한다.
 - `list_suspended_users()` RPC가 관리자에게만 동작한다.
 - 엽서 생성 시 `image_path`는 `postcards/{현재 사용자 ID}/...` 경로만 허용된다.
+- 전화번호 인증이 완료되지 않았거나 정지된 사용자는 엽서 생성, 이미지 업로드, 오늘의 엽서 수신, 신고, 사용자 액션이 제한된다.
 
 ## Auth 설정
 
@@ -67,6 +69,13 @@
 - 카카오 로그인 제품 설정을 활성화한다.
 - Supabase Auth Kakao provider에 REST API key와 secret을 등록한다.
 - redirect URL에 Supabase callback URL을 등록한다.
+
+### 전화번호
+
+- Supabase Auth Phone provider를 활성화한다.
+- 운영 SMS provider를 설정한다.
+- 웹앱의 전화번호 인증은 로그인한 사용자의 전화번호 변경 OTP(`phone_change`)를 사용한다.
+- 인증 완료 후 `sync_my_phone_verification()` RPC가 `profiles.phone_verified_at`을 보정한다.
 
 ### Redirect URL
 
@@ -177,7 +186,9 @@ Supabase Dashboard의 Scheduled Functions 또는 외부 스케줄러에서 위 �
 
 - [ ] 최신 마이그레이션이 모두 적용되었다.
 - [ ] `202605170008_image_path_and_suspended_users.sql`이 적용되었다.
+- [ ] `202605190001_phone_verification_trust_policies.sql`이 적용되었다.
 - [ ] `list_suspended_users()` RPC가 존재한다.
+- [ ] `sync_my_phone_verification()` RPC가 존재한다.
 - [ ] `postcards_image_metadata_pair_check` constraint가 존재한다.
 
 ### 로그인

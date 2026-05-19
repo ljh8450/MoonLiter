@@ -13,6 +13,7 @@
 -- - 202605170006_fix_invite_admin_user_conflict.sql
 -- - 202605170007_user_suspensions_and_login_required.sql
 -- - 202605170008_image_path_and_suspended_users.sql
+-- - 202605190001_phone_verification_trust_policies.sql
 --
 -- Android/Spring Boot REST API는 별도 구현 경로다.
 -- 현재 backend/ 애플리케이션은 Spring Boot + JPA + PostgreSQL 설정을 사용한다.
