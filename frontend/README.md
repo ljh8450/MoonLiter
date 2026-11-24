@@ -1,43 +1,20 @@
 # 문라이터 웹 MVP
 
-React + Vite + Supabase + PWA 기반 초기 MVP 웹앱이다.
+React + TypeScript + Vite로 작성한 PWA입니다. 브라우저에서 Supabase Auth, PostgreSQL/RPC, 비공개 Storage를 사용합니다. Android/Spring Boot는 현재 웹 MVP의 실행에 필요하지 않습니다.
 
 ## 로컬 실행
 
 ```bash
-npm install
+npm ci
+cp .env.example .env.local
 npm run dev
 ```
 
-## 환경 변수
+`.env.local`에 테스트용 Supabase의 `VITE_SUPABASE_URL`과 공개 `VITE_SUPABASE_ANON_KEY`를 입력합니다. [마이그레이션](../supabase/migrations/)을 시간순으로 적용하고 이메일 로그인을 활성화합니다. 소셜 로그인이 필요하면 Google·Kakao와 로컬 리디렉션 URL을 별도 설정합니다. 시크릿 및 service-role 키는 프론트 환경에 넣지 않습니다.
 
-`.env` 또는 Cloudflare Pages 환경 변수에 아래 값을 등록한다.
+## 검증 및 배포
 
-```text
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-```
-
-## Cloudflare Pages 설정
-
-- Framework preset: Vite
-- Build command: `npm run build`
-- Build output directory: `dist`
-- Root directory: `frontend`
-
-## Supabase 설정
-
-1. Supabase 프로젝트를 생성한다.
-2. Auth에서 익명 로그인을 활성화한다.
-3. `supabase/migrations/202605130001_initial_web_mvp.sql`을 적용한다.
-4. 웹앱 환경 변수에 Supabase URL과 anon key를 등록한다.
-
-## 현재 범위
-
-- 익명 로그인.
-- 사진 1장과 문장을 포함한 엽서 작성.
-- Supabase Storage private bucket 업로드.
-- 오늘의 엽서 랜덤 배정.
-- 수신한 사진은 Storage path로 signed URL을 생성해 표시한다.
-
-Android/Spring Boot 기반 구현은 향후 구현 경로로 보류한다.
+- `npm run build`: TypeScript 타입 검사 후 Vite 프로덕션 빌드.
+- `npm run preview`: 생성된 빌드 확인.
+- Cloudflare Pages 기준: 루트 `frontend`, 명령 `npm run build`, 산출물 `dist`. [전체 운영 절차](../docs/operations.md).
+- 제품 흐름과 시연은 [저장소 README](../README.md)를 참고하세요.
